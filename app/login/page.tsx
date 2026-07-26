@@ -15,7 +15,7 @@ export default async function LoginPage({
             Awaj<span className="text-gold"> ET</span>
           </p>
           <p className="mt-1 font-mono text-[10px] tracking-[0.18em] text-white/40 uppercase">
-            FB Scheduler — Team only
+            Content Hub  ·  Restricted Access
           </p>
         </div>
 
