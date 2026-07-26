@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@theme {
+  /* Awaj ET brand palette */
+  --color-gold: #f0a93b;
+  --color-amber: #c97d1e;
+  --color-navy: #12121c;
+  --color-navy-soft: #1c1c2a;
+  --color-charcoal: #2b2b33;
+  --color-mist: #f7f3ec;
+  --color-warmgray: #6b6873;
+  --color-line: rgba(43, 43, 51, 0.12);
+
+  /* Type system */
+  --font-display: var(--font-space-grotesk), sans-serif;
+  --font-sans: var(--font-inter), sans-serif;
+  --font-mono: var(--font-jetbrains), monospace;
+}
+
+body {
+  background: var(--color-mist);
+  color: var(--color-charcoal);
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}

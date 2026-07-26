@@ -1,0 +1,35 @@
+import { NextRequest, NextResponse } from "next/server";
+import { AUTH_COOKIE, expectedToken, safeEqual } from "@/lib/auth";
+import { CLIENT_COOKIE, verifyClientToken } from "@/lib/clientsession";
+
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+
+  // ── Client portal: needs a valid client session ──
+  if (pathname.startsWith("/client")) {
+    const token = req.cookies.get(CLIENT_COOKIE)?.value;
+    if (token && (await verifyClientToken(token))) {
+      return NextResponse.next();
+    }
+    const url = req.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  // ── Team app: shared-password session ──
+  const token = req.cookies.get(AUTH_COOKIE)?.value;
+  if (token && safeEqual(token, await expectedToken())) {
+    return NextResponse.next();
+  }
+  const url = req.nextUrl.clone();
+  url.pathname = "/login";
+  url.search = "";
+  return NextResponse.redirect(url);
+}
+
+export const config = {
+  // Protect everything except the login page, the cron endpoint (it has
+  // its own CRON_SECRET auth), and static assets
+  matcher: ["/((?!login|api/cron|_next/static|_next/image|favicon.ico).*)"],
+};
