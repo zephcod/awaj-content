@@ -55,8 +55,16 @@ design:
    sit in an Appwrite collection (`ig_queue`) until due, then get
    published by:
    - an in-process worker (starts with the app, checks every 60s), and
-   - `GET /api/cron/ig` for serverless deploys (see `vercel.json`;
-     protect with `CRON_SECRET`).
+   - `GET /api/cron/ig` for serverless deploys, driven by a GitHub
+     Actions schedule (`.github/workflows/ig-cron.yml`, every 5 min).
+     Set repo secrets `APP_URL` + `CRON_SECRET` (must match the app's
+     `CRON_SECRET` env). Note: GitHub schedules are best-effort — runs
+     often land 3–15 min late, so treat IG publish times as "within
+     ~15 minutes". On a PRIVATE repo a 5-min schedule (~9,000 billed
+     minutes/month) exceeds the 2,000 free minutes — use a public
+     repo, widen the interval (e.g. `*/15`), or an external pinger
+     like cron-job.org. GitHub also auto-disables schedules in repos
+     with no activity for 60 days — re-enable from the Actions tab.
 
    ⚠️ If neither the app nor a cron is running at the scheduled time,
    the post publishes on next startup. Facebook posts are unaffected —

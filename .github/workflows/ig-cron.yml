@@ -1,0 +1,30 @@
+name: Instagram queue cron
+
+# Publishes due Instagram posts by hitting the app's cron endpoint.
+# Replaces Vercel cron (limited to 1/day on hobby plans).
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   APP_URL      e.g. https://scheduler.awajet.com  (no trailing slash)
+#   CRON_SECRET  must match CRON_SECRET in the app's env
+#
+# Can also be triggered manually from the Actions tab (workflow_dispatch).
+
+on:
+  schedule:
+    # Every 5 minutes — GitHub's practical minimum. Actual runs are
+    # best-effort and often land 3–15 minutes late under load.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  publish-due:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Publish due IG posts
+        run: |
+          set -e
+          resp=$(curl -fsS --max-time 480 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/ig")
+          echo "Response: $resp"
