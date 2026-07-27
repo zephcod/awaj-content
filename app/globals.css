@@ -1,7 +1,13 @@
 @import "tailwindcss";
 
+/* Class-based dark mode (not the OS media query) — the toggle sets/removes
+ * `.dark` on <html>; every `dark:` utility below keys off that class. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  /* Awaj ET brand palette */
+  /* Awaj ET brand palette — the navy sidebar/header always uses these
+   * directly and never changes with the theme toggle (fixed brand chrome,
+   * shared by both the team app and the read-only /client views). */
   --color-gold: #f0a93b;
   --color-amber: #c97d1e;
   --color-navy: #12121c;
@@ -11,22 +17,59 @@
   --color-warmgray: #6b6873;
   --color-line: rgba(43, 43, 51, 0.12);
 
+  /* Semantic surface tokens for the main content area — these DO respond
+   * to the theme toggle. Each resolves through a CSS custom property so
+   * the same utility class (bg-card, text-fg, etc.) paints differently
+   * once .dark is applied, with no rebuild and no class-name churn. */
+  --color-app: var(--surface-app);
+  --color-card: var(--surface-card);
+  --color-fg: var(--text-fg);
+  --color-muted: var(--text-muted);
+  --color-edge: var(--border-edge);
+
   /* Type system */
   --font-display: var(--font-space-grotesk), sans-serif;
   --font-sans: var(--font-inter), sans-serif;
   --font-mono: var(--font-jetbrains), monospace;
 }
 
+:root {
+  --surface-app: var(--color-mist);
+  --surface-card: #ffffff;
+  --text-fg: var(--color-charcoal);
+  --text-muted: var(--color-warmgray);
+  --border-edge: var(--color-line);
+}
+
+.dark {
+  /* A three-tier dark palette so the (always-navy) sidebar, the content
+   * canvas, and cards all read as distinct surfaces instead of blending
+   * into one flat navy field:
+   *   sidebar/header  --color-navy   #12121c  (fixed brand chrome)
+   *   content canvas  --surface-app  #0a0a10  (a touch darker/cooler —
+   *                                            recedes behind the rail)
+   *   cards/panels    --surface-card #1c1c2a  (navy-soft — lighter, so
+   *                                            they visibly float on top)
+   */
+  --surface-app: #0a0a10;
+  --surface-card: var(--color-navy-soft);
+  --text-fg: #f2f0f6;
+  --text-muted: #9b97ab;
+  --border-edge: rgba(255, 255, 255, 0.08);
+}
+
 body {
-  background: var(--color-mist);
-  color: var(--color-charcoal);
+  background: var(--surface-app);
+  color: var(--text-fg);
   font-family: var(--font-sans);
 }
 
 h1,
 h2,
 h3,
-h4 {
+h4,
+h5,
+h6 {
   font-family: var(--font-display);
   letter-spacing: -0.01em;
 }

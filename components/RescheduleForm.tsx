@@ -1,5 +1,6 @@
 "use client";
 
+import { Clock } from "lucide-react";
 import { useActionState, useState } from "react";
 import { reschedule, rescheduleIg, type ActionState } from "@/app/actions";
 
@@ -29,8 +30,9 @@ export default function RescheduleForm({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="font-mono text-[11px] text-warmgray underline hover:text-amber"
+        className="flex items-center gap-1 font-mono text-[11px] text-muted underline hover:text-amber"
       >
+        <Clock className="h-3 w-3" />
         Reschedule
       </button>
     );
@@ -62,7 +64,7 @@ export default function RescheduleForm({
         min={toLocalInputValue(new Date(Date.now() + 15 * 60 * 1000))}
         max={toLocalInputValue(new Date(Date.now() + 75 * 24 * 60 * 60 * 1000))}
         defaultValue={toLocalInputValue(new Date(currentUnix * 1000))}
-        className="rounded-md border border-line bg-mist/40 px-2 py-1.5 text-xs focus:outline-2 focus:outline-gold"
+        className="rounded-md border border-edge bg-app/40 px-2 py-1.5 text-xs focus:outline-2 focus:outline-gold"
       />
       <button
         disabled={pending}
@@ -73,7 +75,7 @@ export default function RescheduleForm({
       <button
         type="button"
         onClick={() => setOpen(false)}
-        className="font-mono text-[11px] text-warmgray underline"
+        className="font-mono text-[11px] text-muted underline"
       >
         Cancel
       </button>

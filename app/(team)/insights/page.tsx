@@ -29,10 +29,10 @@ export default async function InsightsPage({
   return (
     <div className="mx-auto max-w-4xl">
       <div className="mb-2">
-        <h1 className="text-2xl font-bold">Insights</h1>
-        <p className="mt-1 text-sm text-warmgray">
+        <h1 className="font-display text-2xl font-bold">Insights</h1>
+        <p className="mt-1 text-sm text-muted">
           {page && (
-            <span className="font-semibold text-charcoal">{page.name} · </span>
+            <span className="font-semibold text-fg">{page.name} · </span>
           )}
           Reach and engagement across Facebook and Instagram.
         </p>

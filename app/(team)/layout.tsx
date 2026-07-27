@@ -1,9 +1,9 @@
-import MobileNav from "@/components/MobileNav";
-import Sidebar from "@/components/Sidebar";
-import type { SwitcherPage } from "@/components/PageSwitcher";
+import { NavShell } from "@/components/NavShell";
+import PageSwitcher, { type SwitcherPage } from "@/components/PageSwitcher";
+import { NAV } from "@/components/nav";
 import { getActivePage, listPages } from "@/lib/pages";
 
-/** Team shell: sidebar, mobile nav, page switcher. */
+/** Team shell: drawer/sidebar nav with the page switcher. */
 export default async function TeamLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -23,14 +23,13 @@ export default async function TeamLayout({
   }
 
   return (
-    <>
-      <MobileNav pages={pages} activeId={activeId} />
-      <div className="flex min-h-screen">
-        <Sidebar pages={pages} activeId={activeId} />
-        <main className="min-w-0 flex-1 px-4 py-6 md:px-8 lg:px-12 lg:py-8">
-          {children}
-        </main>
-      </div>
-    </>
+    <NavShell
+      items={[...NAV]}
+      subtitle="Social Management"
+      homeHref="/"
+      extra={<PageSwitcher pages={pages} activeId={activeId} />}
+    >
+      {children}
+    </NavShell>
   );
 }

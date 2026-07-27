@@ -8,6 +8,8 @@
     "start": "next start"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.23",
+    "lucide-react": "^1.27.0",
     "next": "^15.3.0",
     "node-appwrite": "^15.0.1",
     "react": "^19.1.0",

@@ -13,8 +13,8 @@ export default async function ClientCalendarPage({
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">Content calendar</h1>
-      <p className="mt-1 text-sm text-warmgray">
+      <h1 className="font-display text-2xl font-bold">Content calendar</h1>
+      <p className="mt-1 text-sm text-muted">
         {ctx?.page.name ?? "Your page"} — scheduled and published posts,
         Ethiopia time (EAT).
       </p>

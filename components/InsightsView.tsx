@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Heart, MessageCircle, Repeat2 } from "lucide-react";
+import { FacebookGlyph, InstagramGlyph } from "@/components/icons/BrandGlyphs";
 import { igQueueConfigured } from "@/lib/env";
 import {
   listPublishedPosts,
@@ -21,7 +23,7 @@ function BarChart({ series }: { series: MetricSeries }) {
   return (
     <div>
       <div className="flex items-baseline justify-between">
-        <span className="font-mono text-[11px] tracking-[0.12em] text-warmgray uppercase">
+        <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
           {series.title}
         </span>
         <span className="font-display text-lg font-bold">
@@ -38,7 +40,7 @@ function BarChart({ series }: { series: MetricSeries }) {
           />
         ))}
       </div>
-      <div className="mt-1 flex justify-between font-mono text-[9px] text-warmgray">
+      <div className="mt-1 flex justify-between font-mono text-[9px] text-muted">
         <span>{series.points[0]?.date.slice(5)}</span>
         <span>{series.points.at(-1)?.date.slice(5)}</span>
       </div>
@@ -48,8 +50,8 @@ function BarChart({ series }: { series: MetricSeries }) {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-line bg-white px-4 py-3 shadow-sm">
-      <p className="font-mono text-[10px] tracking-[0.14em] text-warmgray uppercase">
+    <div className="rounded-lg border border-edge bg-card px-4 py-3 shadow-sm">
+      <p className="font-mono text-[10px] tracking-[0.14em] text-muted uppercase">
         {label}
       </p>
       <p className="mt-1 font-display text-2xl font-bold">{value}</p>
@@ -175,7 +177,7 @@ export default async function InsightsView({
             className={`rounded-full px-4 py-1.5 text-xs font-semibold ${
               days === n
                 ? "bg-navy text-gold"
-                : "border border-line text-warmgray hover:text-charcoal"
+                : "border border-edge text-muted hover:text-fg"
             }`}
           >
             {n} days
@@ -184,7 +186,7 @@ export default async function InsightsView({
       </div>
 
       {error && (
-        <p className="mt-6 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-6 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {error}
         </p>
       )}
@@ -227,7 +229,7 @@ export default async function InsightsView({
               {[...fbCharts, ...igCharts].map((s) => (
                 <div
                   key={s.metric}
-                  className="rounded-lg border border-line bg-white p-4 shadow-sm"
+                  className="rounded-lg border border-edge bg-card p-4 shadow-sm"
                 >
                   <BarChart series={s} />
                 </div>
@@ -235,7 +237,7 @@ export default async function InsightsView({
             </div>
           )}
           {fbCharts.length === 0 && (
-            <p className="mt-6 font-mono text-[11px] text-warmgray">
+            <p className="mt-6 font-mono text-[11px] text-muted">
               No Facebook time-series metrics available — Meta periodically
               retires metrics; this page shows whatever the API still serves.
             </p>
@@ -244,14 +246,14 @@ export default async function InsightsView({
           {/* Top posts */}
           <div className="mt-8 grid gap-6 md:grid-cols-2">
             <div>
-              <h2 className="font-mono text-xs font-semibold tracking-[0.14em] text-warmgray uppercase">
-                ⓕ Top Facebook posts
+              <h2 className="flex items-center gap-1.5 font-mono text-xs font-semibold tracking-[0.14em] text-muted uppercase">
+                <FacebookGlyph className="h-3.5 w-3.5" /> Top Facebook posts
               </h2>
               <ul className="mt-3 flex flex-col gap-2">
                 {topFb.map((p) => (
                   <li
                     key={p.id}
-                    className="rounded-lg border border-line bg-white p-3 shadow-sm"
+                    className="rounded-lg border border-edge bg-card p-3 shadow-sm"
                   >
                     <a
                       href={p.permalink_url}
@@ -261,31 +263,40 @@ export default async function InsightsView({
                     >
                       <p className="line-clamp-2 text-sm">
                         {p.message || (
-                          <span className="text-warmgray italic">(photo)</span>
+                          <span className="text-muted italic">(photo)</span>
                         )}
                       </p>
-                      <p className="mt-1.5 font-mono text-[10px] text-warmgray">
-                        ♥ {p.reactions?.summary?.total_count ?? 0} · 💬{" "}
-                        {p.comments?.summary?.total_count ?? 0} · ↻{" "}
-                        {p.shares?.count ?? 0} · {p.created_time.slice(0, 10)}
+                      <p className="mt-1.5 flex flex-wrap items-center gap-x-1 font-mono text-[10px] text-muted">
+                        <span className="inline-flex items-center gap-0.5">
+                          <Heart className="h-3 w-3" /> {p.reactions?.summary?.total_count ?? 0}
+                        </span>
+                        ·
+                        <span className="inline-flex items-center gap-0.5">
+                          <MessageCircle className="h-3 w-3" /> {p.comments?.summary?.total_count ?? 0}
+                        </span>
+                        ·
+                        <span className="inline-flex items-center gap-0.5">
+                          <Repeat2 className="h-3 w-3" /> {p.shares?.count ?? 0}
+                        </span>
+                        · {p.created_time.slice(0, 10)}
                       </p>
                     </a>
                   </li>
                 ))}
                 {topFb.length === 0 && (
-                  <li className="text-sm text-warmgray">No posts yet.</li>
+                  <li className="text-sm text-muted">No posts yet.</li>
                 )}
               </ul>
             </div>
             <div>
-              <h2 className="font-mono text-xs font-semibold tracking-[0.14em] text-warmgray uppercase">
-                ⓘ Top Instagram posts{igUsername && ` · @${igUsername}`}
+              <h2 className="flex items-center gap-1.5 font-mono text-xs font-semibold tracking-[0.14em] text-muted uppercase">
+                <InstagramGlyph className="h-3.5 w-3.5" /> Top Instagram posts{igUsername && ` · @${igUsername}`}
               </h2>
               <ul className="mt-3 flex flex-col gap-2">
                 {topIg.map((m) => (
                   <li
                     key={m.id}
-                    className="rounded-lg border border-line bg-white p-3 shadow-sm"
+                    className="rounded-lg border border-edge bg-card p-3 shadow-sm"
                   >
                     <a
                       href={m.permalink}
@@ -298,25 +309,31 @@ export default async function InsightsView({
                         <img
                           src={m.thumbnail_url ?? m.media_url}
                           alt=""
-                          className="h-12 w-12 shrink-0 rounded-md border border-line object-cover"
+                          className="h-12 w-12 shrink-0 rounded-md border border-edge object-cover"
                         />
                       )}
                       <div className="min-w-0">
                         <p className="line-clamp-1 text-sm">
                           {m.caption || (
-                            <span className="text-warmgray italic">(image)</span>
+                            <span className="text-muted italic">(image)</span>
                           )}
                         </p>
-                        <p className="mt-1 font-mono text-[10px] text-warmgray">
-                          ♥ {m.like_count ?? 0} · 💬 {m.comments_count ?? 0} ·{" "}
-                          {(m.timestamp ?? "").slice(0, 10)}
+                        <p className="mt-1 flex flex-wrap items-center gap-x-1 font-mono text-[10px] text-muted">
+                          <span className="inline-flex items-center gap-0.5">
+                            <Heart className="h-3 w-3" /> {m.like_count ?? 0}
+                          </span>
+                          ·
+                          <span className="inline-flex items-center gap-0.5">
+                            <MessageCircle className="h-3 w-3" /> {m.comments_count ?? 0}
+                          </span>
+                          · {(m.timestamp ?? "").slice(0, 10)}
                         </p>
                       </div>
                     </a>
                   </li>
                 ))}
                 {topIg.length === 0 && (
-                  <li className="text-sm text-warmgray">
+                  <li className="text-sm text-muted">
                     No Instagram media (or no IG account linked).
                   </li>
                 )}
@@ -324,7 +341,7 @@ export default async function InsightsView({
             </div>
           </div>
 
-          <p className="mt-6 font-mono text-[10px] text-warmgray">
+          <p className="mt-6 font-mono text-[10px] text-muted">
             Top posts ranked by engagement across the 25 most recent posts per
             platform. Charts show daily values; totals are sums over the range.
           </p>

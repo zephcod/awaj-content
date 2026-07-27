@@ -1,3 +1,4 @@
+import { Clapperboard, LayoutGrid, Plus, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import {
   cancelIgQueued,
@@ -5,6 +6,7 @@ import {
   publishIgQueuedNow,
   publishScheduledNow,
 } from "@/app/actions";
+import { FacebookGlyph, InstagramGlyph } from "@/components/icons/BrandGlyphs";
 import RescheduleForm from "@/components/RescheduleForm";
 import { fbConfigured, igQueueConfigured } from "@/lib/env";
 import { listScheduledPosts, type ScheduledPost } from "@/lib/facebook";
@@ -46,10 +48,10 @@ export default async function ScheduledPage() {
     <div className="mx-auto max-w-3xl">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Scheduled</h1>
-          <p className="mt-1 text-sm text-warmgray">
+          <h1 className="font-display text-2xl font-bold">Scheduled</h1>
+          <p className="mt-1 text-sm text-muted">
             {pageName && (
-              <span className="font-semibold text-charcoal">{pageName} · </span>
+              <span className="font-semibold text-fg">{pageName} · </span>
             )}
             Queued on Facebook — published automatically at the set time
             (shown in Ethiopia time, EAT).
@@ -57,21 +59,22 @@ export default async function ScheduledPage() {
         </div>
         <Link
           href="/"
-          className="rounded-md bg-gold px-4 py-2 text-sm font-semibold text-navy hover:bg-amber hover:text-white"
+          className="flex items-center gap-1.5 rounded-md bg-gold px-4 py-2 text-sm font-semibold text-navy hover:bg-amber hover:text-white"
         >
-          + New post
+          <Plus className="h-4 w-4" />
+          New post
         </Link>
       </div>
 
       {error && (
-        <p className="mt-6 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-6 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {error}
         </p>
       )}
 
       {!error && posts.length === 0 && igItems.length === 0 && (
-        <div className="mt-10 rounded-lg border border-dashed border-line bg-white/60 p-10 text-center">
-          <p className="text-sm text-warmgray">
+        <div className="mt-10 rounded-lg border border-dashed border-edge bg-card/60 p-10 text-center">
+          <p className="text-sm text-muted">
             Nothing in the queue. Compose a post and pick a time.
           </p>
         </div>
@@ -80,11 +83,11 @@ export default async function ScheduledPage() {
       {/* ── Instagram queue ── */}
       {(igItems.length > 0 || igError) && (
         <div className="mt-8">
-          <h2 className="font-mono text-xs font-semibold tracking-[0.14em] text-warmgray uppercase">
-            ⓘ Instagram queue
+          <h2 className="flex items-center gap-1.5 font-mono text-xs font-semibold tracking-[0.14em] text-muted uppercase">
+            <InstagramGlyph className="h-3.5 w-3.5" /> Instagram queue
           </h2>
           {igError && (
-            <p className="mt-3 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
+            <p className="mt-3 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
               {igError}
             </p>
           )}
@@ -92,32 +95,32 @@ export default async function ScheduledPage() {
             {igItems.map((item) => (
               <li
                 key={item.$id}
-                className="rounded-lg border border-line bg-white p-4 shadow-sm"
+                className="rounded-lg border border-edge bg-card p-4 shadow-sm"
               >
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <span className="font-mono text-xs font-semibold text-amber">
                     {fmtDateTime(item.scheduledAt)} EAT
                   </span>
-                  <span className="font-mono text-[10px] text-warmgray">
+                  <span className="font-mono text-[10px] text-muted">
                     {relativeFromNow(item.scheduledAt)}
                   </span>
                   {item.igUsername && (
-                    <span className="font-mono text-[10px] text-warmgray">
+                    <span className="font-mono text-[10px] text-muted">
                       @{item.igUsername}
                     </span>
                   )}
                   {item.mediaType === "carousel" && (
-                    <span className="rounded-full bg-navy/5 px-2 py-0.5 font-mono text-[10px] text-warmgray">
-                      ▣ carousel
+                    <span className="inline-flex items-center gap-1 rounded-full bg-navy/5 px-2 py-0.5 font-mono text-[10px] text-muted">
+                      <LayoutGrid className="h-3 w-3" /> carousel
                     </span>
                   )}
                   {item.mediaType === "reel" && (
-                    <span className="rounded-full bg-navy/5 px-2 py-0.5 font-mono text-[10px] text-warmgray">
-                      🎬 reel
+                    <span className="inline-flex items-center gap-1 rounded-full bg-navy/5 px-2 py-0.5 font-mono text-[10px] text-muted">
+                      <Clapperboard className="h-3 w-3" /> reel
                     </span>
                   )}
                   {item.status === "failed" && (
-                    <span className="rounded-full bg-red-50 px-2 py-0.5 font-mono text-[10px] text-red-700">
+                    <span className="rounded-full bg-red-50 px-2 py-0.5 font-mono text-[10px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
                       failed
                     </span>
                   )}
@@ -129,15 +132,15 @@ export default async function ScheduledPage() {
                 </div>
                 <p className="mt-2 text-sm whitespace-pre-wrap">
                   {item.caption || (
-                    <span className="text-warmgray italic">(no caption)</span>
+                    <span className="text-muted italic">(no caption)</span>
                   )}
                 </p>
                 {item.status === "failed" && item.error && (
-                  <p className="mt-2 rounded-md bg-red-50 px-3 py-2 font-mono text-[11px] text-red-700">
+                  <p className="mt-2 rounded-md bg-red-50 px-3 py-2 font-mono text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
                     {item.error}
                   </p>
                 )}
-                <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-line pt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-edge pt-3">
                   <RescheduleForm
                     postId={item.$id}
                     currentUnix={item.scheduledAt}
@@ -145,13 +148,15 @@ export default async function ScheduledPage() {
                   />
                   <form action={publishIgQueuedNow}>
                     <input type="hidden" name="id" value={item.$id} />
-                    <button className="font-mono text-[11px] text-warmgray underline hover:text-amber">
+                    <button className="flex items-center gap-1 font-mono text-[11px] text-muted underline hover:text-amber">
+                      <Send className="h-3 w-3" />
                       {item.status === "failed" ? "Retry now" : "Publish now"}
                     </button>
                   </form>
                   <form action={cancelIgQueued}>
                     <input type="hidden" name="id" value={item.$id} />
-                    <button className="font-mono text-[11px] text-red-600 underline hover:text-red-700">
+                    <button className="flex items-center gap-1 font-mono text-[11px] text-red-600 underline hover:text-red-700">
+                      <Trash2 className="h-3 w-3" />
                       Delete
                     </button>
                   </form>
@@ -164,21 +169,21 @@ export default async function ScheduledPage() {
 
       {/* ── Facebook scheduled ── */}
       {posts.length > 0 && (
-        <h2 className="mt-8 font-mono text-xs font-semibold tracking-[0.14em] text-warmgray uppercase">
-          ⓕ Facebook scheduled
+        <h2 className="mt-8 flex items-center gap-1.5 font-mono text-xs font-semibold tracking-[0.14em] text-muted uppercase">
+          <FacebookGlyph className="h-3.5 w-3.5" /> Facebook scheduled
         </h2>
       )}
       <ul className="mt-3 flex flex-col gap-3">
         {posts.map((p) => (
           <li
             key={p.id}
-            className="rounded-lg border border-line bg-white p-4 shadow-sm"
+            className="rounded-lg border border-edge bg-card p-4 shadow-sm"
           >
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="font-mono text-xs font-semibold text-amber">
                 {fmtDateTime(p.scheduled_publish_time)} EAT
               </span>
-              <span className="font-mono text-[10px] text-warmgray">
+              <span className="font-mono text-[10px] text-muted">
                 {relativeFromNow(p.scheduled_publish_time)}
               </span>
             </div>
@@ -189,32 +194,34 @@ export default async function ScheduledPage() {
                 <img
                   src={p.full_picture}
                   alt=""
-                  className="h-20 w-20 shrink-0 rounded-md border border-line object-cover"
+                  className="h-20 w-20 shrink-0 rounded-md border border-edge object-cover"
                 />
               )}
               <p className="text-sm whitespace-pre-wrap">
                 {p.message || (
-                  <span className="text-warmgray italic">
+                  <span className="text-muted italic">
                     (photo post, no caption)
                   </span>
                 )}
               </p>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-line pt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-edge pt-3">
               <RescheduleForm
                 postId={p.id}
                 currentUnix={p.scheduled_publish_time}
               />
               <form action={publishScheduledNow}>
                 <input type="hidden" name="id" value={p.id} />
-                <button className="font-mono text-[11px] text-warmgray underline hover:text-amber">
+                <button className="flex items-center gap-1 font-mono text-[11px] text-muted underline hover:text-amber">
+                  <Send className="h-3 w-3" />
                   Publish now
                 </button>
               </form>
               <form action={cancelScheduled}>
                 <input type="hidden" name="id" value={p.id} />
-                <button className="font-mono text-[11px] text-red-600 underline hover:text-red-700">
+                <button className="flex items-center gap-1 font-mono text-[11px] text-red-600 underline hover:text-red-700">
+                  <Trash2 className="h-3 w-3" />
                   Delete
                 </button>
               </form>

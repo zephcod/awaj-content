@@ -41,13 +41,13 @@ export default async function ComposePage({
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-2xl font-bold">Compose</h1>
-      <p className="mt-1 text-sm text-warmgray">
+      <h1 className="font-display text-2xl font-bold">Compose</h1>
+      <p className="mt-1 text-sm text-muted">
         Publish or schedule a post to your Facebook Page.
       </p>
 
       {page && (
-        <div className="mt-5 flex items-center gap-3 rounded-lg border border-line bg-white px-4 py-3 shadow-sm">
+        <div className="mt-5 flex items-center gap-3 rounded-lg border border-edge bg-card px-4 py-3 shadow-sm">
           {page.pictureUrl && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -58,7 +58,7 @@ export default async function ComposePage({
           )}
           <div>
             <p className="text-sm font-semibold">{page.name}</p>
-            <p className="font-mono text-[10px] text-warmgray">
+            <p className="font-mono text-[10px] text-muted">
               Page {page.id}
               {typeof page.fanCount === "number" &&
                 ` · ${page.fanCount.toLocaleString()} followers`}
@@ -69,7 +69,7 @@ export default async function ComposePage({
               Active page
             </span>
             {ig?.username && (
-              <span className="rounded-full bg-navy/5 px-3 py-1 font-mono text-[10px] tracking-wider text-warmgray">
+              <span className="rounded-full bg-navy/5 px-3 py-1 font-mono text-[10px] tracking-wider text-muted">
                 IG @{ig.username}
               </span>
             )}
@@ -78,9 +78,9 @@ export default async function ComposePage({
       )}
 
       {error && (
-        <div className="mt-5 rounded-lg border border-amber/40 bg-gold/10 px-4 py-3 text-sm text-charcoal">
+        <div className="mt-5 rounded-lg border border-amber/40 bg-gold/10 px-4 py-3 text-sm text-fg">
           <p className="font-semibold">Facebook connection issue</p>
-          <p className="mt-1 text-warmgray">{error}</p>
+          <p className="mt-1 text-muted">{error}</p>
         </div>
       )}
 

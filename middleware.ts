@@ -30,6 +30,10 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   // Protect everything except the login page, the cron endpoint (it has
-  // its own CRON_SECRET auth), and static assets
-  matcher: ["/((?!login|api/cron|_next/static|_next/image|favicon.ico).*)"],
+  // its own CRON_SECRET auth), and static assets — including anything
+  // served straight out of /public (e.g. awaj-mark.svg on the login
+  // screen itself, requested before a session cookie exists).
+  matcher: [
+    "/((?!login|api/cron|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpe?g|gif|webp|ico)$).*)",
+  ],
 };

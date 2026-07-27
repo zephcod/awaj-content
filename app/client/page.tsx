@@ -1,3 +1,5 @@
+import { ArrowUpRight, Heart, MessageCircle, Repeat2 } from "lucide-react";
+import { FacebookGlyph, InstagramGlyph } from "@/components/icons/BrandGlyphs";
 import { igQueueConfigured } from "@/lib/env";
 import { getClientPage } from "@/lib/clientpage";
 import {
@@ -43,7 +45,7 @@ export default async function ClientPostsPage() {
     ...fbScheduled.map((p) => ({
       key: `fb-${p.id}`,
       when: p.scheduled_publish_time,
-      platform: "ⓕ Facebook",
+      platform: "fb" as const,
       text: p.message || "(photo post)",
       image: p.full_picture,
       badge:
@@ -52,7 +54,7 @@ export default async function ClientPostsPage() {
     ...igQueued.map((i) => ({
       key: `ig-${i.$id}`,
       when: i.scheduledAt,
-      platform: "ⓘ Instagram",
+      platform: "ig" as const,
       text: i.caption || "(image post)",
       image: undefined as string | undefined,
       badge:
@@ -66,26 +68,26 @@ export default async function ClientPostsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">Your content plan</h1>
-      <p className="mt-1 text-sm text-warmgray">
+      <h1 className="font-display text-2xl font-bold">Your content plan</h1>
+      <p className="mt-1 text-sm text-muted">
         Posts Awaj ET has scheduled and published for{" "}
         {ctx?.page.name ?? "your page"}. Times in Ethiopia time (EAT).
       </p>
 
       {error && (
-        <p className="mt-6 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-6 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {error}
         </p>
       )}
 
       {!error && (
         <>
-          <h2 className="mt-8 font-mono text-xs font-semibold tracking-[0.14em] text-warmgray uppercase">
+          <h2 className="mt-8 font-mono text-xs font-semibold tracking-[0.14em] text-muted uppercase">
             Upcoming ({upcoming.length})
           </h2>
           {upcoming.length === 0 && (
-            <div className="mt-3 rounded-lg border border-dashed border-line bg-white/60 p-8 text-center">
-              <p className="text-sm text-warmgray">
+            <div className="mt-3 rounded-lg border border-dashed border-edge bg-card/60 p-8 text-center">
+              <p className="text-sm text-muted">
                 Nothing scheduled right now.
               </p>
             </div>
@@ -94,20 +96,25 @@ export default async function ClientPostsPage() {
             {upcoming.map((u) => (
               <li
                 key={u.key}
-                className="rounded-lg border border-line bg-white p-4 shadow-sm"
+                className="rounded-lg border border-edge bg-card p-4 shadow-sm"
               >
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <span className="font-mono text-xs font-semibold text-amber">
                     {fmtDateTime(u.when)} EAT
                   </span>
-                  <span className="font-mono text-[10px] text-warmgray">
+                  <span className="font-mono text-[10px] text-muted">
                     {relativeFromNow(u.when)}
                   </span>
-                  <span className="font-mono text-[10px] text-warmgray">
-                    {u.platform}
+                  <span className="flex items-center gap-1 font-mono text-[10px] text-muted">
+                    {u.platform === "fb" ? (
+                      <FacebookGlyph className="h-3 w-3" />
+                    ) : (
+                      <InstagramGlyph className="h-3 w-3" />
+                    )}
+                    {u.platform === "fb" ? "Facebook" : "Instagram"}
                   </span>
                   {u.badge && (
-                    <span className="rounded-full bg-navy/5 px-2 py-0.5 font-mono text-[10px] text-warmgray">
+                    <span className="rounded-full bg-navy/5 px-2 py-0.5 font-mono text-[10px] text-muted">
                       {u.badge}
                     </span>
                   )}
@@ -118,7 +125,7 @@ export default async function ClientPostsPage() {
                     <img
                       src={u.image}
                       alt=""
-                      className="h-20 w-20 shrink-0 rounded-md border border-line object-cover"
+                      className="h-20 w-20 shrink-0 rounded-md border border-edge object-cover"
                     />
                   )}
                   <p className="text-sm whitespace-pre-wrap">{u.text}</p>
@@ -127,17 +134,17 @@ export default async function ClientPostsPage() {
             ))}
           </ul>
 
-          <h2 className="mt-10 font-mono text-xs font-semibold tracking-[0.14em] text-warmgray uppercase">
+          <h2 className="mt-10 font-mono text-xs font-semibold tracking-[0.14em] text-muted uppercase">
             Recently published
           </h2>
           <ul className="mt-3 flex flex-col gap-3">
             {published.slice(0, 10).map((p) => (
               <li
                 key={p.id}
-                className="rounded-lg border border-line bg-white p-4 shadow-sm"
+                className="rounded-lg border border-edge bg-card p-4 shadow-sm"
               >
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="font-mono text-xs text-warmgray">
+                  <span className="font-mono text-xs text-muted">
                     {fmtDateTime(p.created_time)} EAT
                   </span>
                   {p.permalink_url && (
@@ -145,9 +152,10 @@ export default async function ClientPostsPage() {
                       href={p.permalink_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-mono text-[11px] text-amber underline"
+                      className="flex items-center gap-1 font-mono text-[11px] text-amber underline"
                     >
-                      View on Facebook ↗
+                      View on Facebook
+                      <ArrowUpRight className="h-3 w-3" />
                     </a>
                   )}
                 </div>
@@ -157,24 +165,30 @@ export default async function ClientPostsPage() {
                     <img
                       src={p.full_picture}
                       alt=""
-                      className="h-20 w-20 shrink-0 rounded-md border border-line object-cover"
+                      className="h-20 w-20 shrink-0 rounded-md border border-edge object-cover"
                     />
                   )}
                   <p className="text-sm whitespace-pre-wrap">
                     {p.message || (
-                      <span className="text-warmgray italic">(photo post)</span>
+                      <span className="text-muted italic">(photo post)</span>
                     )}
                   </p>
                 </div>
-                <div className="mt-3 flex gap-5 border-t border-line pt-3 font-mono text-[11px] text-warmgray">
-                  <span>♥ {p.reactions?.summary?.total_count ?? 0}</span>
-                  <span>💬 {p.comments?.summary?.total_count ?? 0}</span>
-                  <span>↻ {p.shares?.count ?? 0}</span>
+                <div className="mt-3 flex gap-5 border-t border-edge pt-3 font-mono text-[11px] text-muted">
+                  <span className="flex items-center gap-1">
+                    <Heart className="h-3 w-3" /> {p.reactions?.summary?.total_count ?? 0}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <MessageCircle className="h-3 w-3" /> {p.comments?.summary?.total_count ?? 0}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Repeat2 className="h-3 w-3" /> {p.shares?.count ?? 0}
+                  </span>
                 </div>
               </li>
             ))}
             {published.length === 0 && (
-              <li className="text-sm text-warmgray">No published posts yet.</li>
+              <li className="text-sm text-muted">No published posts yet.</li>
             )}
           </ul>
         </>

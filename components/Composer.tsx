@@ -1,6 +1,8 @@
 "use client";
 
 import { useActionState, useRef, useState } from "react";
+import { Video } from "lucide-react";
+import { FacebookGlyph, InstagramGlyph } from "@/components/icons/BrandGlyphs";
 import { createPost, type ActionState } from "@/app/actions";
 
 /** datetime-local value for a Date, in the browser's local time. */
@@ -95,13 +97,13 @@ export default function Composer({
     <form
       action={formAction}
       onSubmit={onSubmit}
-      className="rounded-lg border border-line bg-white p-5 shadow-sm"
+      className="rounded-lg border border-edge bg-card p-5 shadow-sm"
     >
       <input type="hidden" name="scheduledAt" />
 
       {/* Destinations */}
       <div>
-        <span className="font-mono text-[11px] tracking-[0.12em] text-warmgray uppercase">
+        <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
           Post to
         </span>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -109,7 +111,7 @@ export default function Composer({
             className={`flex cursor-pointer items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors ${
               toFb
                 ? "border-navy bg-navy text-gold"
-                : "border-line text-warmgray hover:text-charcoal"
+                : "border-edge text-muted hover:text-fg"
             }`}
           >
             <input
@@ -119,15 +121,17 @@ export default function Composer({
               onChange={(e) => setToFb(e.target.checked)}
               className="hidden"
             />
-            ⓕ Facebook
+            <span className="flex items-center gap-1.5">
+              <FacebookGlyph className="h-3.5 w-3.5" /> Facebook
+            </span>
           </label>
           <label
             className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors ${
               !igLinked
-                ? "cursor-not-allowed border-line text-warmgray/40"
+                ? "cursor-not-allowed border-edge text-muted/40"
                 : toIg
                   ? "cursor-pointer border-navy bg-navy text-gold"
-                  : "cursor-pointer border-line text-warmgray hover:text-charcoal"
+                  : "cursor-pointer border-edge text-muted hover:text-fg"
             }`}
             title={
               igLinked
@@ -143,11 +147,14 @@ export default function Composer({
               onChange={(e) => setToIg(e.target.checked)}
               className="hidden"
             />
-            ⓘ Instagram{igUsername ? ` · @${igUsername}` : ""}
+            <span className="flex items-center gap-1.5">
+              <InstagramGlyph className="h-3.5 w-3.5" />
+              Instagram{igUsername ? ` · @${igUsername}` : ""}
+            </span>
           </label>
         </div>
         {!igLinked && (
-          <p className="mt-2 font-mono text-[10px] text-warmgray">
+          <p className="mt-2 font-mono text-[10px] text-muted">
             To post to Instagram, link an IG professional account to this
             page in Meta Business Suite → Settings → Linked accounts.
           </p>
@@ -155,20 +162,20 @@ export default function Composer({
       </div>
 
       <label className="mt-4 block">
-        <span className="font-mono text-[11px] tracking-[0.12em] text-warmgray uppercase">
+        <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
           Message
         </span>
         <textarea
           name="message"
           rows={6}
           placeholder="What's happening at Awaj ET?"
-          className="mt-2 w-full resize-y rounded-md border border-line bg-mist/40 px-3 py-2.5 text-sm focus:outline-2 focus:outline-gold"
+          className="mt-2 w-full resize-y rounded-md border border-edge bg-app/40 px-3 py-2.5 text-sm focus:outline-2 focus:outline-gold"
         />
       </label>
 
       {/* Link (Facebook only — renders a preview card) */}
       <label className="mt-4 block">
-        <span className="font-mono text-[11px] tracking-[0.12em] text-warmgray uppercase">
+        <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
           Link (optional, Facebook only)
         </span>
         <input
@@ -177,10 +184,10 @@ export default function Composer({
           value={linkUrl}
           onChange={(e) => setLinkUrl(e.target.value)}
           placeholder="https://awajet.com/offer"
-          className="mt-2 w-full rounded-md border border-line bg-mist/40 px-3 py-2.5 text-sm focus:outline-2 focus:outline-gold"
+          className="mt-2 w-full rounded-md border border-edge bg-app/40 px-3 py-2.5 text-sm focus:outline-2 focus:outline-gold"
         />
         {linkUrl && (
-          <span className="mt-1.5 block font-mono text-[10px] text-warmgray">
+          <span className="mt-1.5 block font-mono text-[10px] text-muted">
             Facebook shows the link's preview card — uploaded media can't be
             combined with it, and Instagram doesn't support link posts.
           </span>
@@ -189,7 +196,7 @@ export default function Composer({
 
       {/* Photos (up to 10 → multi-photo on FB, carousel on IG) */}
       <div className="mt-4">
-        <span className="font-mono text-[11px] tracking-[0.12em] text-warmgray uppercase">
+        <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
           Photos{" "}
           {toIg ? "(IG: 1 = post, 2–10 = carousel)" : "(up to 10, optional)"}
         </span>
@@ -207,7 +214,7 @@ export default function Composer({
             <button
               type="button"
               onClick={clearPhotos}
-              className="font-mono text-[11px] text-warmgray underline hover:text-amber"
+              className="font-mono text-[11px] text-muted underline hover:text-amber"
             >
               Remove all
             </button>
@@ -221,11 +228,11 @@ export default function Composer({
                 key={i}
                 src={src}
                 alt={`Preview ${i + 1}`}
-                className="h-24 w-24 rounded-md border border-line object-cover"
+                className="h-24 w-24 rounded-md border border-edge object-cover"
               />
             ))}
             {previews.length > 1 && (
-              <span className="self-end font-mono text-[10px] text-warmgray">
+              <span className="self-end font-mono text-[10px] text-muted">
                 {previews.length} photos
               </span>
             )}
@@ -235,7 +242,7 @@ export default function Composer({
 
       {/* Video (FB video post / IG Reel) */}
       <div className="mt-4">
-        <span className="font-mono text-[11px] tracking-[0.12em] text-warmgray uppercase">
+        <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
           Video {toIg ? "(published as a Reel)" : "(optional)"}
         </span>
         <div className="mt-2 flex items-center gap-3">
@@ -251,15 +258,16 @@ export default function Composer({
             <button
               type="button"
               onClick={clearVideo}
-              className="font-mono text-[11px] text-warmgray underline hover:text-amber"
+              className="font-mono text-[11px] text-muted underline hover:text-amber"
             >
               Remove
             </button>
           )}
         </div>
         {videoName && (
-          <p className="mt-2 font-mono text-[10px] text-warmgray">
-            🎬 {videoName}
+          <p className="mt-2 flex items-center gap-1.5 font-mono text-[10px] text-muted">
+            <Video className="h-3 w-3 shrink-0" />
+            {videoName}
             {toIg &&
               " — Reels are queued and publish once Instagram finishes processing (~1–3 min)."}
           </p>
@@ -267,7 +275,7 @@ export default function Composer({
       </div>
 
       {/* Timing */}
-      <div className="mt-5 border-t border-line pt-4">
+      <div className="mt-5 border-t border-edge pt-4">
         <div className="flex flex-wrap items-center gap-2">
           {(
             [
@@ -282,7 +290,7 @@ export default function Composer({
               className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
                 mode === value
                   ? "bg-navy text-gold"
-                  : "border border-line text-warmgray hover:text-charcoal"
+                  : "border border-edge text-muted hover:text-fg"
               }`}
             >
               {label}
@@ -299,9 +307,9 @@ export default function Composer({
               min={minTime}
               max={maxTime}
               defaultValue={initialWhen}
-              className="rounded-md border border-line bg-mist/40 px-3 py-2 text-sm focus:outline-2 focus:outline-gold"
+              className="rounded-md border border-edge bg-app/40 px-3 py-2 text-sm focus:outline-2 focus:outline-gold"
             />
-            <p className="mt-2 font-mono text-[10px] text-warmgray">
+            <p className="mt-2 font-mono text-[10px] text-muted">
               Facebook publishes natively; Instagram posts are queued and
               published by this app when due. Window: 10 minutes to 75 days
               from now (your local time).
@@ -311,7 +319,7 @@ export default function Composer({
       </div>
 
       {igScheduleBlocked && (
-        <p className="mt-4 rounded-md bg-red-50 px-3 py-2 font-mono text-[11px] text-red-700">
+        <p className="mt-4 rounded-md bg-red-50 px-3 py-2 font-mono text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {videoName
             ? "Instagram Reels need the Appwrite queue (APPWRITE_* vars in .env) for video hosting — see README."
             : "Instagram scheduling needs the Appwrite queue (APPWRITE_* vars in .env). Publish to Instagram immediately, or configure the queue — see README."}
@@ -321,7 +329,7 @@ export default function Composer({
       {state && (
         <p
           className={`mt-4 rounded-md px-3 py-2 font-mono text-[11px] ${
-            state.ok ? "bg-gold/15 text-amber" : "bg-red-50 text-red-700"
+            state.ok ? "bg-gold/15 text-amber" : "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"
           }`}
         >
           {state.message}
@@ -329,7 +337,7 @@ export default function Composer({
       )}
 
       {linkConflict && (
-        <p className="mt-4 rounded-md bg-red-50 px-3 py-2 font-mono text-[11px] text-red-700">
+        <p className="mt-4 rounded-md bg-red-50 px-3 py-2 font-mono text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {toIg
             ? "Link posts are Facebook-only — untick Instagram, or clear the link and put the URL in the caption text instead."
             : "A link post can't include uploaded media — remove the link or the media."}
