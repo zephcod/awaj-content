@@ -151,18 +151,82 @@ Notes: scheduled time must be **10 minutes to 75 days** from the API
 call. Instagram is not covered here — scheduling for IG uses a different
 endpoint family (`/media` + `/media_publish`) and can be added later.
 
+## LinkedIn (scaffold — not yet verified against a live app)
+
+Posting/scheduling code exists for LinkedIn Company Pages
+(`lib/linkedin.ts`, `lib/linkedinOAuth.ts`, `lib/linkedinOrgs.ts`,
+`lib/liqueue.ts`), written against LinkedIn's documented Community
+Management API shapes. It has **not been exercised against a real,
+approved LinkedIn app** — treat every request/response shape as "best
+effort from docs" until it has been.
+
+### Why LinkedIn works differently from Facebook/Instagram here
+
+- **No system user.** Every connected organization requires a human who
+  is a super-admin of that org's LinkedIn Page to click through OAuth
+  consent themselves, via `/api/linkedin/connect`. There's no way to
+  add a client's Page centrally the way `FB_PAGE_IDS` works.
+- **Access tokens expire every 60 days, with no refresh token** unless
+  the app has been approved as a **Marketing Developer Platform (MDP)
+  Partner** — a separate application process. Without that, someone has
+  to manually reconnect each organization roughly every 2 months.
+  `/settings/linkedin` flags connections within 7 days of expiry.
+- **No native scheduling at all.** Every LinkedIn post publishes the
+  moment the API is called — there's no "publish later" parameter.
+  Scheduled posts (and all videos, since upload/processing status isn't
+  polled here) sit in the app's own queue (`li_queue`, mirroring
+  `ig_queue`) until due, published by the same in-process worker
+  (`instrumentation.ts`) and `/api/cron/li` cron route used for
+  Instagram.
+- **App review is required before anything works.** LinkedIn's
+  Community Management API needs a verified Page, a registered legal
+  business entity, and a two-tier review (Development tier, then a
+  separate Standard-tier request with a demo recording) before
+  production posting is possible.
+
+### Setup (once LinkedIn approval clears)
+
+1. Create an app at the [LinkedIn Developer
+   Portal](https://www.linkedin.com/developers/apps), verify it against
+   Awaj ET's Company Page, and request the **Community Management API**
+   product.
+2. Add a redirect URL matching your deploy (e.g.
+   `https://your-deploy.example.com/api/linkedin/callback`).
+3. Fill `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`,
+   `LINKEDIN_REDIRECT_URI` in `.env`.
+4. Run once:
+   ```bash
+   node scripts/setup-li-db.mjs
+   ```
+   This creates the `li_connections` and `li_queue` Appwrite collections
+   and a fresh media-staging bucket — paste the printed bucket id into
+   `.env` as `LI_MEDIA_BUCKET_ID`.
+5. Visit `/settings/linkedin` and send the "Connect a LinkedIn Page"
+   link to each client's Page super-admin.
+6. If not pursuing MDP Partner status, put a recurring reminder to check
+   `/settings/linkedin` for expiring connections — Standard tier has no
+   auto-refresh.
+
 ## Project layout
 
 ```
 app/
-  page.tsx            Compose (page card + composer)
-  scheduled/page.tsx  Scheduled queue (reschedule / publish now / delete)
-  published/page.tsx  Recent posts + engagement
-  actions.ts          Server actions (create, cancel, reschedule, publish)
-  login/              Shared-password login (same scheme as awaj-leads)
-components/           Sidebar, MobileNav, Composer, RescheduleForm
+  page.tsx                  Compose (page card + composer)
+  scheduled/page.tsx        Scheduled queue (reschedule / publish now / delete)
+  published/page.tsx        Recent posts + engagement
+  settings/linkedin/        Connected LinkedIn orgs + connect/disconnect
+  api/linkedin/connect/     Starts LinkedIn OAuth consent
+  api/linkedin/callback/    Exchanges code for tokens, saves connection
+  api/cron/li/              Serverless-friendly LinkedIn queue publisher
+  actions.ts                Server actions (create, cancel, reschedule, publish)
+  login/                    Shared-password login (same scheme as awaj-leads)
+components/                 Sidebar, MobileNav, Composer, RescheduleForm
 lib/
   facebook.ts         Graph API client + scheduling-window validation
+  linkedin.ts         LinkedIn posting/media client (SCAFFOLD — see above)
+  linkedinOAuth.ts    LinkedIn OAuth2 (authorize URL, token exchange/refresh)
+  linkedinOrgs.ts     Connected-organization store (Appwrite) + token refresh
+  liqueue.ts          LinkedIn scheduling queue (mirrors igqueue.ts)
   auth.ts             Edge-safe cookie auth
   env.ts              Env accessors
 middleware.ts         Route protection

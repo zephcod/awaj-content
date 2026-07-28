@@ -25,7 +25,7 @@ export default async function TeamLayout({
   return (
     <NavShell
       items={[...NAV]}
-      subtitle="Social Management"
+      subtitle="Platform Management"
       homeHref="/"
       extra={<PageSwitcher pages={pages} activeId={activeId} />}
     >

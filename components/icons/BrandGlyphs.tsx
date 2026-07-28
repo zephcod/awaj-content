@@ -19,6 +19,18 @@ export function FacebookGlyph(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function LinkedInGlyph(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 72 72" width="1em" height="1em" {...props}>
+      <rect width="72" height="72" rx="12" fill="#0A66C2" />
+      <path
+        fill="#fff"
+        d="M20.4 27.9h7.3v24.4h-7.3zm3.65-11.7a4.25 4.25 0 1 1 0 8.5 4.25 4.25 0 0 1 0-8.5zM33.4 27.9h7v3.34h.1c.98-1.85 3.36-3.8 6.92-3.8 7.4 0 8.77 4.87 8.77 11.2v13.66h-7.3V40.06c0-2.72-.05-6.22-3.79-6.22-3.79 0-4.37 2.96-4.37 6.02v12.44h-7.3z"
+      />
+    </svg>
+  );
+}
+
 export function InstagramGlyph(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 200 200" width="1em" height="1em" {...props}>

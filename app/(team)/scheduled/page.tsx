@@ -2,16 +2,20 @@ import { Clapperboard, LayoutGrid, Plus, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import {
   cancelIgQueued,
+  cancelLiQueued,
   cancelScheduled,
   publishIgQueuedNow,
+  publishLiQueuedNow,
   publishScheduledNow,
 } from "@/app/actions";
-import { FacebookGlyph, InstagramGlyph } from "@/components/icons/BrandGlyphs";
+import { FacebookGlyph, InstagramGlyph, LinkedInGlyph } from "@/components/icons/BrandGlyphs";
 import RescheduleForm from "@/components/RescheduleForm";
-import { fbConfigured, igQueueConfigured } from "@/lib/env";
+import { fbConfigured, igQueueConfigured, liQueueConfigured } from "@/lib/env";
 import { listScheduledPosts, type ScheduledPost } from "@/lib/facebook";
 import { fmtDateTime, relativeFromNow } from "@/lib/format";
 import { listIgQueue, type IgQueueItem } from "@/lib/igqueue";
+import { listLiQueue, type LiQueueItem } from "@/lib/liqueue";
+import { getActiveLiOrg } from "@/lib/linkedinOrgs";
 import { getActivePage } from "@/lib/pages";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +23,10 @@ export const dynamic = "force-dynamic";
 export default async function ScheduledPage() {
   let posts: ScheduledPost[] = [];
   let igItems: IgQueueItem[] = [];
+  let liItems: LiQueueItem[] = [];
   let error: string | null = null;
   let igError: string | null = null;
+  let liError: string | null = null;
   let pageName = "";
 
   if (!fbConfigured()) {
@@ -41,6 +47,17 @@ export default async function ScheduledPage() {
       }
     } catch (e) {
       error = e instanceof Error ? e.message : "Could not load posts.";
+    }
+  }
+
+  // LinkedIn's connection is independent of Facebook's — load regardless
+  // of whether FB is configured, and never let it block the FB view.
+  if (liQueueConfigured()) {
+    try {
+      const liOrg = await getActiveLiOrg();
+      if (liOrg) liItems = await listLiQueue(liOrg.orgUrn);
+    } catch (e) {
+      liError = e instanceof Error ? e.message : "Could not load the LinkedIn queue.";
     }
   }
 
@@ -72,7 +89,7 @@ export default async function ScheduledPage() {
         </p>
       )}
 
-      {!error && posts.length === 0 && igItems.length === 0 && (
+      {!error && posts.length === 0 && igItems.length === 0 && liItems.length === 0 && (
         <div className="mt-10 rounded-lg border border-dashed border-edge bg-card/60 p-10 text-center">
           <p className="text-sm text-muted">
             Nothing in the queue. Compose a post and pick a time.
@@ -154,6 +171,88 @@ export default async function ScheduledPage() {
                     </button>
                   </form>
                   <form action={cancelIgQueued}>
+                    <input type="hidden" name="id" value={item.$id} />
+                    <button className="flex items-center gap-1 font-mono text-[11px] text-red-600 underline hover:text-red-700">
+                      <Trash2 className="h-3 w-3" />
+                      Delete
+                    </button>
+                  </form>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ── LinkedIn queue ── */}
+      {(liItems.length > 0 || liError) && (
+        <div className="mt-8">
+          <h2 className="flex items-center gap-1.5 font-mono text-xs font-semibold tracking-[0.14em] text-muted uppercase">
+            <LinkedInGlyph className="h-3.5 w-3.5" /> LinkedIn queue
+          </h2>
+          {liError && (
+            <p className="mt-3 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
+              {liError}
+            </p>
+          )}
+          <ul className="mt-3 flex flex-col gap-3">
+            {liItems.map((item) => (
+              <li
+                key={item.$id}
+                className="rounded-lg border border-edge bg-card p-4 shadow-sm"
+              >
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span className="font-mono text-xs font-semibold text-amber">
+                    {fmtDateTime(item.scheduledAt)} EAT
+                  </span>
+                  <span className="font-mono text-[10px] text-muted">
+                    {relativeFromNow(item.scheduledAt)}
+                  </span>
+                  {item.mediaType === "multiImage" && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-navy/5 px-2 py-0.5 font-mono text-[10px] text-muted">
+                      <LayoutGrid className="h-3 w-3" /> multi-image
+                    </span>
+                  )}
+                  {item.mediaType === "video" && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-navy/5 px-2 py-0.5 font-mono text-[10px] text-muted">
+                      <Clapperboard className="h-3 w-3" /> video
+                    </span>
+                  )}
+                  {item.status === "failed" && (
+                    <span className="rounded-full bg-red-50 px-2 py-0.5 font-mono text-[10px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                      failed
+                    </span>
+                  )}
+                  {item.status === "publishing" && (
+                    <span className="rounded-full bg-gold/15 px-2 py-0.5 font-mono text-[10px] text-amber">
+                      publishing…
+                    </span>
+                  )}
+                </div>
+                <p className="mt-2 text-sm whitespace-pre-wrap">
+                  {item.caption || (
+                    <span className="text-muted italic">(no caption)</span>
+                  )}
+                </p>
+                {item.status === "failed" && item.error && (
+                  <p className="mt-2 rounded-md bg-red-50 px-3 py-2 font-mono text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                    {item.error}
+                  </p>
+                )}
+                <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-edge pt-3">
+                  <RescheduleForm
+                    postId={item.$id}
+                    currentUnix={item.scheduledAt}
+                    platform="li"
+                  />
+                  <form action={publishLiQueuedNow}>
+                    <input type="hidden" name="id" value={item.$id} />
+                    <button className="flex items-center gap-1 font-mono text-[11px] text-muted underline hover:text-amber">
+                      <Send className="h-3 w-3" />
+                      {item.status === "failed" ? "Retry now" : "Publish now"}
+                    </button>
+                  </form>
+                  <form action={cancelLiQueued}>
                     <input type="hidden" name="id" value={item.$id} />
                     <button className="flex items-center gap-1 font-mono text-[11px] text-red-600 underline hover:text-red-700">
                       <Trash2 className="h-3 w-3" />

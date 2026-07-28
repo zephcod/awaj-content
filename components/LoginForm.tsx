@@ -35,7 +35,7 @@ function Fields({ error }: { error?: string }) {
     <fieldset disabled={pending} className="contents">
       <label className="flex flex-col gap-2">
         <span className="font-mono text-[11px] tracking-[0.12em] text-white/60 uppercase">
-          Access code or client PIN
+          Enter Team Access Code
         </span>
         <input
           type="password"

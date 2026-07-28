@@ -17,13 +17,31 @@ export const env = {
 
   graphVersion: () => process.env.FB_GRAPH_VERSION ?? "v23.0",
 
-  // ── Appwrite (Instagram scheduling queue) ──
+  // ── Appwrite (Instagram + LinkedIn scheduling queues) ──
   appwriteEndpoint: () => process.env.APPWRITE_ENDPOINT ?? "",
   appwriteProjectId: () => process.env.APPWRITE_PROJECT_ID ?? "",
   appwriteApiKey: () => process.env.APPWRITE_API_KEY ?? "",
   appwriteDatabaseId: () => process.env.APPWRITE_DATABASE_ID ?? "",
 
   cronSecret: () => process.env.CRON_SECRET ?? "",
+
+  // ── LinkedIn (Community Management API) ──
+  // Standard 3-legged OAuth — unlike Meta there's no system-user token;
+  // each connected organization's tokens are stored in Appwrite
+  // (lib/linkedinOrgs.ts) after its own Page admin completes consent.
+  linkedinClientId: () => process.env.LINKEDIN_CLIENT_ID ?? "",
+  linkedinClientSecret: () => process.env.LINKEDIN_CLIENT_SECRET ?? "",
+  /** Must exactly match a redirect URL registered on the LinkedIn app. */
+  linkedinRedirectUri: () => process.env.LINKEDIN_REDIRECT_URI ?? "",
+  /**
+   * LinkedIn versions its REST API by month (YYYYMM). Bump this as
+   * LinkedIn deprecates older versions — check the Community Management
+   * API docs before changing, since request/response shapes can shift
+   * between versions.
+   */
+  linkedinApiVersion: () => process.env.LINKEDIN_API_VERSION ?? "202506",
+  /** Appwrite bucket id for staging LinkedIn media until publish time. */
+  liMediaBucketId: () => process.env.LI_MEDIA_BUCKET_ID ?? "",
 };
 
 /** True when the Appwrite queue (IG scheduling) is configured. */
@@ -33,6 +51,31 @@ export function igQueueConfigured(): boolean {
       env.appwriteProjectId() &&
       env.appwriteApiKey() &&
       env.appwriteDatabaseId()
+  );
+}
+
+/** True when the LinkedIn OAuth app credentials are present. */
+export function linkedinOAuthConfigured(): boolean {
+  return Boolean(
+    env.linkedinClientId() &&
+      env.linkedinClientSecret() &&
+      env.linkedinRedirectUri()
+  );
+}
+
+/**
+ * True when the LinkedIn scheduling queue can be used. LinkedIn has no
+ * native scheduling (same constraint as Instagram), so every scheduled
+ * LinkedIn post — and every post with media, since uploads are staged —
+ * relies on this same Appwrite instance plus a dedicated media bucket.
+ */
+export function liQueueConfigured(): boolean {
+  return Boolean(
+    env.appwriteEndpoint() &&
+      env.appwriteProjectId() &&
+      env.appwriteApiKey() &&
+      env.appwriteDatabaseId() &&
+      env.liMediaBucketId()
   );
 }
 

@@ -2,7 +2,7 @@
 
 import { useActionState, useRef, useState } from "react";
 import { Video } from "lucide-react";
-import { FacebookGlyph, InstagramGlyph } from "@/components/icons/BrandGlyphs";
+import { FacebookGlyph, InstagramGlyph, LinkedInGlyph } from "@/components/icons/BrandGlyphs";
 import { createPost, type ActionState } from "@/app/actions";
 
 /** datetime-local value for a Date, in the browser's local time. */
@@ -17,14 +17,20 @@ export default function Composer({
   igLinked = false,
   igUsername,
   igQueueReady = false,
+  liOrgName,
+  liQueueReady = false,
   defaultWhen,
 }: {
   igLinked?: boolean;
   igUsername?: string;
   igQueueReady?: boolean;
+  /** Name of the currently-active connected LinkedIn organization, if any (lib/linkedinOrgs.ts). */
+  liOrgName?: string;
+  liQueueReady?: boolean;
   /** Prefill for the schedule picker (from the calendar's "+" links). */
   defaultWhen?: string;
 }) {
+  const liLinked = Boolean(liOrgName);
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
     createPost,
     null
@@ -32,6 +38,7 @@ export default function Composer({
   const [mode, setMode] = useState<"now" | "schedule">("schedule");
   const [toFb, setToFb] = useState(true);
   const [toIg, setToIg] = useState(false);
+  const [toLi, setToLi] = useState(false);
   const [previews, setPreviews] = useState<string[]>([]);
   const [videoName, setVideoName] = useState<string | null>(null);
   const [linkUrl, setLinkUrl] = useState("");
@@ -91,7 +98,13 @@ export default function Composer({
   const igNeedsPhoto = toIg && !hasMedia;
   const igScheduleBlocked =
     toIg && !igQueueReady && (mode === "schedule" || Boolean(videoName));
-  const linkConflict = Boolean(linkUrl) && (hasMedia || toIg);
+  // LinkedIn has no native scheduling at all (unlike Facebook) — any
+  // scheduled post, or any video (queued the same way IG Reels are,
+  // since publish-time processing isn't polled synchronously), needs
+  // the queue.
+  const liScheduleBlocked =
+    toLi && !liQueueReady && (mode === "schedule" || Boolean(videoName));
+  const linkConflict = Boolean(linkUrl) && (hasMedia || toIg || toLi);
 
   return (
     <form
@@ -110,7 +123,7 @@ export default function Composer({
           <label
             className={`flex cursor-pointer items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors ${
               toFb
-                ? "border-navy bg-navy text-gold"
+                ? "border-amber-400 bg-navy text-gold"
                 : "border-edge text-muted hover:text-fg"
             }`}
           >
@@ -130,7 +143,7 @@ export default function Composer({
               !igLinked
                 ? "cursor-not-allowed border-edge text-muted/40"
                 : toIg
-                  ? "cursor-pointer border-navy bg-navy text-gold"
+                  ? "cursor-pointer border-amber-400 bg-navy text-gold"
                   : "cursor-pointer border-edge text-muted hover:text-fg"
             }`}
             title={
@@ -152,11 +165,42 @@ export default function Composer({
               Instagram{igUsername ? ` · @${igUsername}` : ""}
             </span>
           </label>
+          <label
+            className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors ${
+              !liLinked
+                ? "cursor-not-allowed border-edge text-muted/40"
+                : toLi
+                  ? "cursor-pointer border-amber-400 bg-navy text-gold"
+                  : "cursor-pointer border-edge text-muted hover:text-fg"
+            }`}
+            title={
+              liLinked ? undefined : "No LinkedIn organization connected yet"
+            }
+          >
+            <input
+              type="checkbox"
+              name="dest_li"
+              checked={toLi}
+              disabled={!liLinked}
+              onChange={(e) => setToLi(e.target.checked)}
+              className="hidden"
+            />
+            <span className="flex items-center gap-1.5">
+              <LinkedInGlyph className="h-3.5 w-3.5" />
+              LinkedIn{liOrgName ? ` · ${liOrgName}` : ""}
+            </span>
+          </label>
         </div>
         {!igLinked && (
           <p className="mt-2 font-mono text-[10px] text-muted">
             To post to Instagram, link an IG professional account to this
             page in Meta Business Suite → Settings → Linked accounts.
+          </p>
+        )}
+        {!liLinked && (
+          <p className="mt-1 font-mono text-[10px] text-muted">
+            No LinkedIn Page connected — a super-admin of the client&apos;s
+            LinkedIn Page needs to connect it (see /settings/linkedin).
           </p>
         )}
       </div>
@@ -169,7 +213,7 @@ export default function Composer({
           name="message"
           rows={6}
           placeholder="What's happening at Awaj ET?"
-          className="mt-2 w-full resize-y rounded-md border border-edge bg-app/40 px-3 py-2.5 text-sm focus:outline-2 focus:outline-gold"
+          className="mt-2 w-full resize-y rounded-md border border-edge bg-input px-3 py-2.5 text-sm focus:outline-2 focus:outline-gold"
         />
       </label>
 
@@ -184,12 +228,13 @@ export default function Composer({
           value={linkUrl}
           onChange={(e) => setLinkUrl(e.target.value)}
           placeholder="https://awajet.com/offer"
-          className="mt-2 w-full rounded-md border border-edge bg-app/40 px-3 py-2.5 text-sm focus:outline-2 focus:outline-gold"
+          className="mt-2 w-full rounded-md border border-edge bg-input px-3 py-2.5 text-sm focus:outline-2 focus:outline-gold"
         />
         {linkUrl && (
           <span className="mt-1.5 block font-mono text-[10px] text-muted">
             Facebook shows the link's preview card — uploaded media can't be
-            combined with it, and Instagram doesn't support link posts.
+            combined with it, and Instagram/LinkedIn don't support link
+            posts here (put the URL in the caption text instead).
           </span>
         )}
       </label>
@@ -307,12 +352,12 @@ export default function Composer({
               min={minTime}
               max={maxTime}
               defaultValue={initialWhen}
-              className="rounded-md border border-edge bg-app/40 px-3 py-2 text-sm focus:outline-2 focus:outline-gold"
+              className="rounded-md border border-edge bg-input px-3 py-2 text-sm focus:outline-2 focus:outline-gold"
             />
             <p className="mt-2 font-mono text-[10px] text-muted">
-              Facebook publishes natively; Instagram posts are queued and
-              published by this app when due. Window: 10 minutes to 75 days
-              from now (your local time).
+              Facebook publishes natively; Instagram and LinkedIn posts are
+              queued and published by this app when due. Window: 10 minutes
+              to 75 days from now (your local time).
             </p>
           </div>
         )}
@@ -323,6 +368,14 @@ export default function Composer({
           {videoName
             ? "Instagram Reels need the Appwrite queue (APPWRITE_* vars in .env) for video hosting — see README."
             : "Instagram scheduling needs the Appwrite queue (APPWRITE_* vars in .env). Publish to Instagram immediately, or configure the queue — see README."}
+        </p>
+      )}
+
+      {liScheduleBlocked && (
+        <p className="mt-4 rounded-md bg-red-50 px-3 py-2 font-mono text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
+          {videoName
+            ? "LinkedIn video needs the queue configured (LI_MEDIA_BUCKET_ID + APPWRITE_* vars in .env) — see README."
+            : "LinkedIn scheduling needs the queue configured (LI_MEDIA_BUCKET_ID + APPWRITE_* vars in .env). Publish to LinkedIn immediately, or configure the queue — see README."}
         </p>
       )}
 
@@ -345,7 +398,13 @@ export default function Composer({
       )}
 
       <button
-        disabled={pending || igNeedsPhoto || igScheduleBlocked || linkConflict}
+        disabled={
+          pending ||
+          igNeedsPhoto ||
+          igScheduleBlocked ||
+          liScheduleBlocked ||
+          linkConflict
+        }
         className="mt-4 rounded-md bg-gold px-5 py-2.5 text-sm font-semibold text-navy transition-colors hover:bg-amber hover:text-white disabled:opacity-50"
         title={
           igNeedsPhoto ? "Instagram posts need a photo or video" : undefined

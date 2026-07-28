@@ -17,7 +17,7 @@ export default async function LoginPage({
             Awaj<span className="text-gold"> ET</span>
           </p>
           <p className="mt-1 font-mono text-[10px] tracking-[0.18em] text-white/40 uppercase">
-            Social Media Management — Teams only
+            Social Media Platform Management · Teams only
           </p>
         </div>
 

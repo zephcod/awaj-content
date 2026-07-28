@@ -14,8 +14,8 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Awaj ET — Social Management",
-  description: "Social Media Management App for Awaj ET",
+  title: "Awaj ET — Platform Management",
+  description: "Social Media Platform Management App for Awaj ET",
 };
 
 export const viewport: Viewport = {

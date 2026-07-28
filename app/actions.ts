@@ -13,7 +13,7 @@ import {
   uploadUnpublishedPhoto,
   validateScheduleTime,
 } from "@/lib/facebook";
-import { igQueueConfigured } from "@/lib/env";
+import { igQueueConfigured, liQueueConfigured } from "@/lib/env";
 import {
   deleteIgItem,
   enqueueIgPost,
@@ -25,8 +25,28 @@ import {
   publishCarouselToIg,
   publishImageToIg,
 } from "@/lib/instagram";
+import {
+  LinkedInApiError,
+  publishImagePostToLi,
+  publishMultiImagePostToLi,
+  publishTextPostToLi,
+  uploadImageToLi,
+  type LiAuth,
+} from "@/lib/linkedin";
+import {
+  deleteLiItem,
+  enqueueLiPost,
+  publishLiItemNow,
+  rescheduleLiItem,
+} from "@/lib/liqueue";
+import {
+  ACTIVE_LI_ORG_COOKIE,
+  deleteLiConnection,
+  getActiveLiOrg,
+  getValidAccessToken,
+} from "@/lib/linkedinOrgs";
 import { ACTIVE_PAGE_COOKIE, getActivePage } from "@/lib/pages";
-import { uploadIgVideo } from "@/lib/storage";
+import { uploadIgVideo, uploadLiMedia } from "@/lib/storage";
 
 export type ActionState = {
   ok: boolean;
@@ -35,8 +55,32 @@ export type ActionState = {
 
 function errMessage(e: unknown): string {
   if (e instanceof GraphError) return `Facebook: ${e.message}`;
+  if (e instanceof LinkedInApiError) return `LinkedIn: ${e.message}`;
   if (e instanceof Error) return e.message;
   return "Something went wrong.";
+}
+
+/** Switch the LinkedIn organization Composer posts to. */
+export async function setActiveLiOrg(orgUrn: string): Promise<void> {
+  (await cookies()).set(ACTIVE_LI_ORG_COOKIE, orgUrn, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  });
+  revalidatePath("/", "layout");
+}
+
+/** Disconnect a LinkedIn organization (e.g. a client offboarding). */
+export async function disconnectLiOrg(formData: FormData): Promise<void> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  try {
+    await deleteLiConnection(id);
+  } catch {
+    // refresh shows current state
+  }
+  revalidatePath("/settings/linkedin");
 }
 
 /** Switch the page all views operate on. */
@@ -72,9 +116,10 @@ export async function createPost(
   const scheduledAt = scheduledAtRaw ? Number(scheduledAtRaw) : undefined;
   const toFb = formData.get("dest_fb") === "on";
   const toIg = formData.get("dest_ig") === "on";
+  const toLi = formData.get("dest_li") === "on";
 
   // ── Validation ──
-  if (!toFb && !toIg) {
+  if (!toFb && !toIg && !toLi) {
     return { ok: false, message: "Pick at least one destination." };
   }
   if (!message && photos.length === 0 && !video && !link) {
@@ -97,11 +142,11 @@ export async function createPost(
           "A link post can't include uploaded media — Facebook renders the link's own preview card. Remove the link or the media.",
       };
     }
-    if (toIg) {
+    if (toIg || toLi) {
+      const which = [toIg && "Instagram", toLi && "LinkedIn"].filter(Boolean).join(" and ");
       return {
         ok: false,
-        message:
-          "Instagram doesn't support link posts (URLs in captions aren't clickable). Post the link to Facebook only, or attach media for Instagram and put the link in the caption text.",
+        message: `${which} doesn't support link posts (URLs in captions aren't clickable). Post the link to Facebook only, or attach media and put the link in the caption text.`,
       };
     }
   }
@@ -127,13 +172,26 @@ export async function createPost(
         : "Instagram scheduling needs the Appwrite queue — add APPWRITE_* vars to .env (see README) or publish to Instagram immediately.",
     };
   }
+  // LinkedIn has no native scheduling at all (unlike Facebook), so any
+  // scheduled LinkedIn post needs the queue — same as any LinkedIn video,
+  // since upload/processing status isn't polled synchronously here yet.
+  const liNeedsQueue = toLi && (scheduledAt !== undefined || Boolean(video));
+  if (liNeedsQueue && !liQueueConfigured()) {
+    return {
+      ok: false,
+      message:
+        "LinkedIn scheduling/video needs the queue configured — add LI_MEDIA_BUCKET_ID + APPWRITE_* vars to .env (see README), or publish text/single-image LinkedIn posts immediately.",
+    };
+  }
 
   try {
-    const page = await getActivePage();
-    if (!page) return { ok: false, message: "No Facebook page configured." };
+    const page = toFb || toIg ? await getActivePage() : null;
+    if ((toFb || toIg) && !page) {
+      return { ok: false, message: "No Facebook page configured." };
+    }
 
     let ig: { id: string; username?: string } | null = null;
-    if (toIg) {
+    if (toIg && page) {
       ig = await getIgAccount(page);
       if (!ig) {
         return {
@@ -143,16 +201,35 @@ export async function createPost(
       }
     }
 
-    // Upload photos once; FB attaches them, IG uses their CDN URLs.
+    let liAuth: LiAuth | null = null;
+    let liOrgName: string | undefined;
+    if (toLi) {
+      const org = await getActiveLiOrg();
+      if (!org) {
+        return {
+          ok: false,
+          message: "No LinkedIn organization connected. Visit /settings/linkedin to connect one.",
+        };
+      }
+      liAuth = { orgUrn: org.orgUrn, accessToken: await getValidAccessToken(org.orgUrn) };
+      liOrgName = org.orgName;
+    }
+
+    // Upload photos to FB once (as unpublished page photos); FB attaches
+    // them, IG uses their CDN URLs. Only needed when either is a
+    // destination — LinkedIn uploads the same raw files separately below
+    // (it needs its own asset URN, not an fbcdn URL).
     const mediaFbids: string[] = [];
-    for (const photo of photos) {
-      mediaFbids.push((await uploadUnpublishedPhoto(page, photo)).id);
+    if ((toFb || toIg) && page) {
+      for (const photo of photos) {
+        mediaFbids.push((await uploadUnpublishedPhoto(page, photo)).id);
+      }
     }
 
     const done: string[] = [];
 
     // ── Facebook ──
-    if (toFb) {
+    if (toFb && page) {
       if (video) {
         await createVideoPost(page, {
           description: message,
@@ -180,7 +257,7 @@ export async function createPost(
     }
 
     // ── Instagram ──
-    if (toIg && ig) {
+    if (toIg && ig && page) {
       if (video) {
         // Reels always go through the queue: processing takes minutes.
         const fileId = await uploadIgVideo(video);
@@ -228,12 +305,63 @@ export async function createPost(
       }
     }
 
+    // ── LinkedIn ──
+    // No native scheduling exists on LinkedIn's API at all (unlike
+    // Facebook) — every scheduled post, and every video (processing
+    // status isn't polled synchronously here), goes through the queue.
+    // Text and single/multi-image posts can publish immediately.
+    if (toLi && liAuth) {
+      if (video) {
+        const fileId = await uploadLiMedia(video);
+        await enqueueLiPost({
+          orgUrn: liAuth.orgUrn,
+          orgName: liOrgName,
+          caption: message,
+          mediaType: "video",
+          mediaRefs: [fileId],
+          mediaContentType: video.type,
+          scheduledAt: scheduledAt ?? Math.floor(Date.now() / 1000),
+        });
+        done.push(
+          scheduledAt ? "LinkedIn video (queued)" : "LinkedIn video (queued — publishes shortly)"
+        );
+      } else if (scheduledAt) {
+        const fileIds: string[] = [];
+        for (const photo of photos) fileIds.push(await uploadLiMedia(photo));
+        await enqueueLiPost({
+          orgUrn: liAuth.orgUrn,
+          orgName: liOrgName,
+          caption: message,
+          mediaType: fileIds.length > 1 ? "multiImage" : fileIds.length === 1 ? "image" : "text",
+          mediaRefs: fileIds,
+          mediaContentType: photos[0]?.type,
+          scheduledAt,
+        });
+        done.push(
+          fileIds.length > 1 ? "LinkedIn multi-image (queued)" : "LinkedIn (queued)"
+        );
+      } else if (photos.length > 1) {
+        const assetUrns: string[] = [];
+        for (const photo of photos) assetUrns.push(await uploadImageToLi(liAuth, photo));
+        await publishMultiImagePostToLi(liAuth, { commentary: message, imageAssetUrns: assetUrns });
+        done.push("LinkedIn multi-image");
+      } else if (photos.length === 1) {
+        const assetUrn = await uploadImageToLi(liAuth, photos[0]);
+        await publishImagePostToLi(liAuth, { commentary: message, imageAssetUrn: assetUrn });
+        done.push("LinkedIn");
+      } else {
+        await publishTextPostToLi(liAuth, { commentary: message });
+        done.push("LinkedIn");
+      }
+    }
+
     revalidatePath("/scheduled");
     revalidatePath("/published");
     revalidatePath("/calendar");
+    const target = page ? `page "${page.name}"` : liOrgName ? `"${liOrgName}"` : "";
     return {
       ok: true,
-      message: `Done: ${done.join(" + ")} — page "${page.name}".`,
+      message: `Done: ${done.join(" + ")}${target ? ` — ${target}.` : "."}`,
     };
   } catch (e) {
     return { ok: false, message: errMessage(e) };
@@ -278,6 +406,51 @@ export async function rescheduleIg(
   if (problem) return { ok: false, message: problem };
   try {
     await rescheduleIgItem(id, scheduledAt);
+  } catch (e) {
+    return { ok: false, message: errMessage(e) };
+  }
+  revalidatePath("/scheduled");
+  return { ok: true, message: "Post rescheduled." };
+}
+
+// ── LinkedIn queue management ─────────────────────────────────────
+
+export async function cancelLiQueued(formData: FormData): Promise<void> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  try {
+    await deleteLiItem(id);
+  } catch {
+    // refresh shows current state
+  }
+  revalidatePath("/scheduled");
+}
+
+export async function publishLiQueuedNow(formData: FormData): Promise<void> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  try {
+    await publishLiItemNow(id);
+  } catch {
+    // item will show as failed with the error message
+  }
+  revalidatePath("/scheduled");
+  revalidatePath("/published");
+}
+
+export async function rescheduleLi(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const id = String(formData.get("id") ?? "");
+  const scheduledAt = Number(formData.get("scheduledAt"));
+  if (!id || !Number.isFinite(scheduledAt)) {
+    return { ok: false, message: "Invalid reschedule request." };
+  }
+  const problem = validateScheduleTime(scheduledAt);
+  if (problem) return { ok: false, message: problem };
+  try {
+    await rescheduleLiItem(id, scheduledAt);
   } catch (e) {
     return { ok: false, message: errMessage(e) };
   }

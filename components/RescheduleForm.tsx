@@ -2,7 +2,7 @@
 
 import { Clock } from "lucide-react";
 import { useActionState, useState } from "react";
-import { reschedule, rescheduleIg, type ActionState } from "@/app/actions";
+import { reschedule, rescheduleIg, rescheduleLi, type ActionState } from "@/app/actions";
 
 function toLocalInputValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -18,11 +18,11 @@ export default function RescheduleForm({
 }: {
   postId: string;
   currentUnix: number;
-  platform?: "fb" | "ig";
+  platform?: "fb" | "ig" | "li";
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
-    platform === "ig" ? rescheduleIg : reschedule,
+    platform === "ig" ? rescheduleIg : platform === "li" ? rescheduleLi : reschedule,
     null
   );
 
@@ -64,7 +64,7 @@ export default function RescheduleForm({
         min={toLocalInputValue(new Date(Date.now() + 15 * 60 * 1000))}
         max={toLocalInputValue(new Date(Date.now() + 75 * 24 * 60 * 60 * 1000))}
         defaultValue={toLocalInputValue(new Date(currentUnix * 1000))}
-        className="rounded-md border border-edge bg-app/40 px-2 py-1.5 text-xs focus:outline-2 focus:outline-gold"
+        className="rounded-md border border-edge bg-input px-2 py-1.5 text-xs focus:outline-2 focus:outline-gold"
       />
       <button
         disabled={pending}

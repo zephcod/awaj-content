@@ -1,6 +1,7 @@
 import Composer from "@/components/Composer";
-import { fbConfigured, igQueueConfigured } from "@/lib/env";
+import { fbConfigured, igQueueConfigured, liQueueConfigured } from "@/lib/env";
 import { getIgAccount, type IgAccount } from "@/lib/instagram";
+import { getActiveLiOrg } from "@/lib/linkedinOrgs";
 import { getActivePage, type ManagedPage } from "@/lib/pages";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,9 @@ export default async function ComposePage({
       error = e instanceof Error ? e.message : "Could not reach Facebook.";
     }
   }
+
+  // LinkedIn connection is independent of Facebook's — never blocks it.
+  const liOrg = await getActiveLiOrg().catch(() => null);
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -89,6 +93,8 @@ export default async function ComposePage({
           igLinked={Boolean(ig)}
           igUsername={ig?.username}
           igQueueReady={igQueueConfigured()}
+          liOrgName={liOrg?.orgName}
+          liQueueReady={liQueueConfigured()}
           defaultWhen={defaultWhen}
         />
       </div>

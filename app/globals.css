@@ -26,6 +26,10 @@
   --color-fg: var(--text-fg);
   --color-muted: var(--text-muted);
   --color-edge: var(--border-edge);
+  /* Text inputs/textareas sit inside bg-card panels — they need their own
+   * tone (distinct from both the card and the page canvas) so a field
+   * reads as "editable" instead of blending into the card behind it. */
+  --color-input: var(--surface-input);
 
   /* Type system */
   --font-display: var(--font-space-grotesk), sans-serif;
@@ -36,6 +40,9 @@
 :root {
   --surface-app: var(--color-mist);
   --surface-card: #ffffff;
+  /* Noticeably darker than the white card (mist alone reads almost
+   * identical to white at typical text-field sizes). */
+  --surface-input: #eee8dc;
   --text-fg: var(--color-charcoal);
   --text-muted: var(--color-warmgray);
   --border-edge: var(--color-line);
@@ -53,6 +60,9 @@
    */
   --surface-app: #0a0a10;
   --surface-card: var(--color-navy-soft);
+  /* Between the canvas and the (lighter) card — clearly darker than
+   * navy-soft so fields don't disappear into the card around them. */
+  --surface-input: #131320;
   --text-fg: #f2f0f6;
   --text-muted: #9b97ab;
   --border-edge: rgba(255, 255, 255, 0.08);

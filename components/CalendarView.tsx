@@ -1,20 +1,14 @@
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import Link from "next/link";
-import { FacebookGlyph, InstagramGlyph } from "@/components/icons/BrandGlyphs";
-import { igQueueConfigured } from "@/lib/env";
+import { KIND_STYLE, PlatformIcon, fmtDayLabel, type CalEvent } from "@/components/CalendarShared";
+import { DayMorePopover } from "@/components/DayMorePopover";
+import { igQueueConfigured, liQueueConfigured } from "@/lib/env";
 import { listPublishedPosts, listScheduledPosts } from "@/lib/facebook";
 import { listIgQueue } from "@/lib/igqueue";
+import { listLiQueue } from "@/lib/liqueue";
+import { getActiveLiOrg } from "@/lib/linkedinOrgs";
 import { getIgAccount, listIgMedia } from "@/lib/instagram";
 import type { ManagedPage } from "@/lib/pages";
-
-/** Small platform mark used in the legend and on each event chip. */
-function PlatformIcon({ platform }: { platform: "fb" | "ig" }) {
-  return platform === "fb" ? (
-    <FacebookGlyph className="inline-block h-3 w-3 shrink-0 align-[-1px]" />
-  ) : (
-    <InstagramGlyph className="inline-block h-3 w-3 shrink-0 align-[-1px]" />
-  );
-}
 
 /** Ethiopia is UTC+3 with no DST — fixed offset is safe. */
 const EAT_OFFSET_MS = 3 * 60 * 60 * 1000;
@@ -26,26 +20,6 @@ function eatYmd(d: Date): string {
 function eatTime(d: Date): string {
   return new Date(d.getTime() + EAT_OFFSET_MS).toISOString().slice(11, 16);
 }
-
-type CalEvent = {
-  time: string; // HH:MM (EAT)
-  platform: "fb" | "ig";
-  kind: "scheduled" | "published" | "failed" | "publishing";
-  label: string;
-  href?: string;
-};
-
-const KIND_STYLE: Record<CalEvent["kind"], string> = {
-  // Light sky-blue tint — reads as "upcoming/informational" and sits
-  // clearly apart from the gold "in progress" and red "failed" states,
-  // instead of the previous solid navy chip blending into the (also navy)
-  // dark-mode canvas and looking closer to an error/disabled state than
-  // an upcoming one. Mirrors the same fix in portal-app's CalendarView.
-  scheduled: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
-  publishing: "bg-gold/20 text-amber",
-  published: "border border-edge bg-card text-muted",
-  failed: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
-};
 
 /**
  * Month-grid calendar of scheduled + published posts for one page.
@@ -170,6 +144,35 @@ export default async function CalendarView({
     }
   }
 
+  // LinkedIn — optional, independent of the FB page's own connection
+  // state (a different org may or may not be connected) and never
+  // blocks the rest of the calendar.
+  try {
+    if (liQueueConfigured()) {
+      const liOrg = await getActiveLiOrg();
+      if (liOrg) {
+        for (const item of await listLiQueue(liOrg.orgUrn)) {
+          if (readOnly && item.status === "failed") continue;
+          const d = new Date(item.scheduledAt * 1000);
+          add(eatYmd(d), {
+            time: eatTime(d),
+            platform: "li",
+            kind:
+              item.status === "failed"
+                ? "failed"
+                : item.status === "publishing"
+                  ? "publishing"
+                  : "scheduled",
+            label: item.caption || "(post)",
+            href: readOnly ? undefined : "/scheduled",
+          });
+        }
+      }
+    }
+  } catch {
+    // LinkedIn issues are shown elsewhere; keep the calendar rendering
+  }
+
   for (const list of events.values()) {
     list.sort((a, b) => a.time.localeCompare(b.time));
   }
@@ -235,7 +238,8 @@ export default async function CalendarView({
         )}
         <span className="inline-flex items-center gap-1">
           <PlatformIcon platform="fb" /> Facebook ·{" "}
-          <PlatformIcon platform="ig" /> Instagram
+          <PlatformIcon platform="ig" /> Instagram ·{" "}
+          <PlatformIcon platform="li" /> LinkedIn
         </span>
       </div>
 
@@ -313,9 +317,11 @@ export default async function CalendarView({
                   )
                 )}
                 {dayEvents.length > 4 && (
-                  <span className="px-1.5 font-mono text-[10px] text-muted">
-                    +{dayEvents.length - 4} more
-                  </span>
+                  <DayMorePopover
+                    count={dayEvents.length - 4}
+                    dateLabel={fmtDayLabel(ymd)}
+                    events={dayEvents}
+                  />
                 )}
               </div>
             </div>
