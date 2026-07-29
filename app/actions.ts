@@ -13,7 +13,13 @@ import {
   uploadUnpublishedPhoto,
   validateScheduleTime,
 } from "@/lib/facebook";
-import { igQueueConfigured, liQueueConfigured } from "@/lib/env";
+import { fbQueueConfigured, igQueueConfigured, liQueueConfigured } from "@/lib/env";
+import {
+  deleteFbItem,
+  enqueueFbPost,
+  publishFbItemNow,
+  rescheduleFbItem,
+} from "@/lib/fbqueue";
 import {
   deleteIgItem,
   enqueueIgPost,
@@ -46,7 +52,7 @@ import {
   getValidAccessToken,
 } from "@/lib/linkedinOrgs";
 import { ACTIVE_PAGE_COOKIE, getActivePage } from "@/lib/pages";
-import { uploadIgVideo, uploadLiMedia } from "@/lib/storage";
+import { deleteIgMedia, mediaUrl, uploadFbMedia, uploadIgMedia, uploadLiMedia } from "@/lib/storage";
 
 export type ActionState = {
   ok: boolean;
@@ -112,6 +118,12 @@ export async function createPost(
   const videoEntry = formData.get("video");
   const video =
     videoEntry instanceof File && videoEntry.size > 0 ? videoEntry : null;
+  // Optional custom Reel cover — Instagram-only, only meaningful with a video.
+  const igThumbnailEntry = formData.get("igThumbnail");
+  const igThumbnail =
+    igThumbnailEntry instanceof File && igThumbnailEntry.size > 0
+      ? igThumbnailEntry
+      : null;
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
   const scheduledAt = scheduledAtRaw ? Number(scheduledAtRaw) : undefined;
   const toFb = formData.get("dest_fb") === "on";
@@ -215,44 +227,80 @@ export async function createPost(
       liOrgName = org.orgName;
     }
 
-    // Upload photos to FB once (as unpublished page photos); FB attaches
-    // them, IG uses their CDN URLs. Only needed when either is a
-    // destination — LinkedIn uploads the same raw files separately below
-    // (it needs its own asset URN, not an fbcdn URL).
+    // Upload photos to FB once (as unpublished page photos) for an
+    // IMMEDIATE Facebook post only. A SCHEDULED Facebook post skips this
+    // entirely — see lib/fbqueue.ts below — since an unpublished photo
+    // not attached to a real post doesn't reliably survive a long wait.
     const mediaFbids: string[] = [];
-    if ((toFb || toIg) && page) {
+    if (toFb && !scheduledAt && page) {
       for (const photo of photos) {
         mediaFbids.push((await uploadUnpublishedPhoto(page, photo)).id);
+      }
+    }
+
+    // Instagram never touches Facebook's photo storage — every IG-bound
+    // photo is staged directly in the shared Appwrite bucket (immediate
+    // or queued alike), then served to Graph as a plain public URL.
+    const igMediaRefs: string[] = [];
+    if (toIg && photos.length > 0) {
+      for (const photo of photos) {
+        igMediaRefs.push(await uploadIgMedia(photo));
       }
     }
 
     const done: string[] = [];
 
     // ── Facebook ──
+    // Scheduled posts no longer use Facebook's native scheduler — it
+    // silently throttles once a Page has ~30 pending scheduled posts.
+    // Instead they go through the Appwrite-backed queue (lib/fbqueue.ts)
+    // and are only sent to Graph, fully published, once actually due.
     if (toFb && page) {
-      if (video) {
-        await createVideoPost(page, {
-          description: message,
-          video,
-          scheduledAt,
-        });
-        done.push(scheduledAt ? "Facebook video (scheduled)" : "Facebook video");
+      if (scheduledAt) {
+        if (video) {
+          const fileId = await uploadFbMedia(video);
+          await enqueueFbPost({
+            pageId: page.id,
+            caption: message,
+            mediaType: "video",
+            mediaRefs: [fileId],
+            mediaContentType: video.type,
+            scheduledAt,
+          });
+          done.push("Facebook video (queued)");
+        } else if (photos.length > 0) {
+          const fileIds: string[] = [];
+          for (const photo of photos) fileIds.push(await uploadFbMedia(photo));
+          await enqueueFbPost({
+            pageId: page.id,
+            caption: message,
+            mediaType: fileIds.length > 1 ? "multiImage" : "image",
+            mediaRefs: fileIds,
+            mediaContentType: photos[0]?.type,
+            scheduledAt,
+          });
+          done.push(
+            fileIds.length > 1 ? "Facebook (multi-photo, queued)" : "Facebook (queued)"
+          );
+        } else {
+          await enqueueFbPost({
+            pageId: page.id,
+            caption: message,
+            link: link || undefined,
+            mediaType: "text",
+            scheduledAt,
+          });
+          done.push(link ? "Facebook link post (queued)" : "Facebook (queued)");
+        }
+      } else if (video) {
+        await createVideoPost(page, { description: message, video });
+        done.push("Facebook video");
       } else if (mediaFbids.length > 0) {
-        await createFeedPostWithMedia(page, {
-          caption: message,
-          mediaFbids,
-          scheduledAt,
-        });
-        const label = mediaFbids.length > 1 ? "Facebook (multi-photo)" : "Facebook";
-        done.push(scheduledAt ? `${label} (scheduled)` : label);
+        await createFeedPostWithMedia(page, { caption: message, mediaFbids });
+        done.push(mediaFbids.length > 1 ? "Facebook (multi-photo)" : "Facebook");
       } else {
-        await createTextPost(page, {
-          message,
-          link: link || undefined,
-          scheduledAt,
-        });
-        const label = link ? "Facebook link post" : "Facebook";
-        done.push(scheduledAt ? `${label} (scheduled)` : label);
+        await createTextPost(page, { message, link: link || undefined });
+        done.push(link ? "Facebook link post" : "Facebook");
       }
     }
 
@@ -260,7 +308,9 @@ export async function createPost(
     if (toIg && ig && page) {
       if (video) {
         // Reels always go through the queue: processing takes minutes.
-        const fileId = await uploadIgVideo(video);
+        const fileId = await uploadIgMedia(video);
+        let thumbRef: string | undefined;
+        if (igThumbnail) thumbRef = await uploadIgMedia(igThumbnail);
         await enqueueIgPost({
           pageId: page.id,
           igUserId: ig.id,
@@ -268,6 +318,7 @@ export async function createPost(
           caption: message,
           mediaType: "reel",
           mediaRefs: [fileId],
+          thumbRef,
           scheduledAt: scheduledAt ?? Math.floor(Date.now() / 1000),
         });
         done.push(
@@ -281,26 +332,28 @@ export async function createPost(
           igUserId: ig.id,
           igUsername: ig.username,
           caption: message,
-          mediaType: mediaFbids.length > 1 ? "carousel" : "image",
-          mediaRefs: mediaFbids,
+          mediaType: igMediaRefs.length > 1 ? "carousel" : "image",
+          mediaRefs: igMediaRefs,
           scheduledAt,
         });
         done.push(
-          mediaFbids.length > 1
+          igMediaRefs.length > 1
             ? "Instagram carousel (queued)"
             : "Instagram (queued)"
         );
-      } else if (mediaFbids.length > 1) {
+      } else if (igMediaRefs.length > 1) {
         await publishCarouselToIg(page, ig.id, {
           caption: message,
-          fbPhotoIds: mediaFbids,
+          imageUrls: igMediaRefs.map(mediaUrl),
         });
+        for (const ref of igMediaRefs) await deleteIgMedia(ref);
         done.push("Instagram carousel");
       } else {
         await publishImageToIg(page, ig.id, {
           caption: message,
-          fbPhotoId: mediaFbids[0],
+          imageUrl: mediaUrl(igMediaRefs[0]),
         });
+        await deleteIgMedia(igMediaRefs[0]);
         done.push("Instagram");
       }
     }
@@ -366,6 +419,51 @@ export async function createPost(
   } catch (e) {
     return { ok: false, message: errMessage(e) };
   }
+}
+
+// ── Facebook queue management ─────────────────────────────────────
+
+export async function cancelFbQueued(formData: FormData): Promise<void> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  try {
+    await deleteFbItem(id);
+  } catch {
+    // refresh shows current state
+  }
+  revalidatePath("/scheduled");
+}
+
+export async function publishFbQueuedNow(formData: FormData): Promise<void> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  try {
+    await publishFbItemNow(id);
+  } catch {
+    // item will show as failed with the error message
+  }
+  revalidatePath("/scheduled");
+  revalidatePath("/published");
+}
+
+export async function rescheduleFbQueued(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const id = String(formData.get("id") ?? "");
+  const scheduledAt = Number(formData.get("scheduledAt"));
+  if (!id || !Number.isFinite(scheduledAt)) {
+    return { ok: false, message: "Invalid reschedule request." };
+  }
+  const problem = validateScheduleTime(scheduledAt);
+  if (problem) return { ok: false, message: problem };
+  try {
+    await rescheduleFbItem(id, scheduledAt);
+  } catch (e) {
+    return { ok: false, message: errMessage(e) };
+  }
+  revalidatePath("/scheduled");
+  return { ok: true, message: "Post rescheduled." };
 }
 
 // ── Instagram queue management ────────────────────────────────────

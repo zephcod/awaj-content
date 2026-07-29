@@ -54,6 +54,21 @@ export function igQueueConfigured(): boolean {
   );
 }
 
+/**
+ * True when the Facebook scheduling queue can be used. Facebook posts
+ * no longer use Facebook's own scheduler (see lib/fbqueue.ts) — every
+ * scheduled FB post relies on this same Appwrite instance. No separate
+ * bucket var needed: staged media shares storage.ts's MEDIA_BUCKET.
+ */
+export function fbQueueConfigured(): boolean {
+  return Boolean(
+    env.appwriteEndpoint() &&
+      env.appwriteProjectId() &&
+      env.appwriteApiKey() &&
+      env.appwriteDatabaseId()
+  );
+}
+
 /** True when the LinkedIn OAuth app credentials are present. */
 export function linkedinOAuthConfigured(): boolean {
   return Boolean(

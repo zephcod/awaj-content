@@ -1,0 +1,190 @@
+/**
+ * Facebook scheduling queue, backed by Appwrite (same instance as the
+ * IG and LinkedIn queues). Facebook posts no longer use Facebook's own
+ * `scheduled_publish_time` — that path silently throttles once a Page
+ * has ~30 pending scheduled posts, with no useful error. Instead, every
+ * scheduled Facebook post lives here as `pending` and is only sent to
+ * Graph — as a real, immediately-published post — at the moment it's
+ * actually due, via `processDueFbPosts()`, driven by the in-process
+ * worker (instrumentation.ts) and/or the cron route (/api/cron/fb).
+ *
+ * Structurally this is lib/liqueue.ts with the platform swapped — same
+ * claim/publish/fail lifecycle, same due-post polling shape. Media is
+ * staged in Appwrite at compose time (lib/storage.ts's uploadFbMedia,
+ * sharing the same bucket as IG Reel hosting) and re-uploaded to Graph
+ * fresh at publish time, mirroring how the IG/LI queues stage media.
+ */
+
+import { Client, Databases, ID, Query } from "node-appwrite";
+import { env, fbQueueConfigured } from "./env";
+import {
+  createFeedPostWithMedia,
+  createTextPost,
+  createVideoPost,
+  uploadUnpublishedPhoto,
+  type PageAuth,
+} from "./facebook";
+import { listPages } from "./pages";
+import { deleteFbMedia, downloadFbMedia } from "./storage";
+
+export const FB_QUEUE_COLLECTION = "fb_queue";
+
+export type FbMediaType = "text" | "image" | "multiImage" | "video";
+
+export type FbQueueItem = {
+  $id: string;
+  pageId: string;
+  caption: string;
+  /** Only meaningful for mediaType "text" — Facebook's link preview card. */
+  link?: string;
+  mediaType: FbMediaType;
+  /** JSON array of Appwrite file ids staged via lib/storage.ts's uploadFbMedia. */
+  mediaRefs?: string;
+  /** MIME type of the staged file(s) — Appwrite doesn't preserve this itself. */
+  mediaContentType?: string;
+  scheduledAt: number; // unix seconds
+  status: "pending" | "publishing" | "published" | "failed";
+  error?: string;
+  fbPostId?: string;
+};
+
+let _db: Databases | null = null;
+
+function db(): Databases {
+  if (_db) return _db;
+  const client = new Client()
+    .setEndpoint(env.appwriteEndpoint())
+    .setProject(env.appwriteProjectId())
+    .setKey(env.appwriteApiKey());
+  _db = new Databases(client);
+  return _db;
+}
+
+const DB = () => env.appwriteDatabaseId();
+
+// ── Queue CRUD ────────────────────────────────────────────────────
+
+export async function enqueueFbPost(item: {
+  pageId: string;
+  caption: string;
+  link?: string;
+  mediaType: FbMediaType;
+  mediaRefs?: string[];
+  mediaContentType?: string;
+  scheduledAt: number;
+}): Promise<void> {
+  const { mediaRefs, ...rest } = item;
+  await db().createDocument(DB(), FB_QUEUE_COLLECTION, ID.unique(), {
+    ...rest,
+    caption: item.caption.slice(0, 63000),
+    mediaRefs: mediaRefs ? JSON.stringify(mediaRefs) : undefined,
+    status: "pending",
+  });
+}
+
+/** Pending + failed items for one page, soonest first. */
+export async function listFbQueue(pageId: string): Promise<FbQueueItem[]> {
+  const res = await db().listDocuments(DB(), FB_QUEUE_COLLECTION, [
+    Query.equal("pageId", pageId),
+    Query.notEqual("status", "published"),
+    Query.orderAsc("scheduledAt"),
+    Query.limit(100),
+  ]);
+  return res.documents as unknown as FbQueueItem[];
+}
+
+export async function rescheduleFbItem(id: string, scheduledAt: number): Promise<void> {
+  await db().updateDocument(DB(), FB_QUEUE_COLLECTION, id, {
+    scheduledAt,
+    status: "pending",
+    error: null,
+  });
+}
+
+export async function deleteFbItem(id: string): Promise<void> {
+  const doc = (await db().getDocument(DB(), FB_QUEUE_COLLECTION, id)) as unknown as FbQueueItem;
+  await db().deleteDocument(DB(), FB_QUEUE_COLLECTION, id);
+  for (const ref of doc.mediaRefs ? (JSON.parse(doc.mediaRefs) as string[]) : []) {
+    await deleteFbMedia(ref);
+  }
+}
+
+// ── Publisher ─────────────────────────────────────────────────────
+
+async function publishItem(item: FbQueueItem): Promise<void> {
+  // Claim it (best-effort lock against double-publish)
+  await db().updateDocument(DB(), FB_QUEUE_COLLECTION, item.$id, {
+    status: "publishing",
+  });
+  try {
+    const page = (await listPages()).find((p) => p.id === item.pageId);
+    if (!page) throw new Error(`Page ${item.pageId} is not configured.`);
+
+    const refs: string[] = item.mediaRefs ? JSON.parse(item.mediaRefs) : [];
+    const contentType = item.mediaContentType ?? "image/jpeg";
+
+    let res: { id: string };
+    if (item.mediaType === "image" || item.mediaType === "multiImage") {
+      const mediaFbids: string[] = [];
+      for (let i = 0; i < refs.length; i++) {
+        const file = await downloadFbMedia(refs[i], contentType, `photo-${i}.jpg`);
+        mediaFbids.push((await uploadUnpublishedPhoto(page as PageAuth, file)).id);
+      }
+      res = await createFeedPostWithMedia(page as PageAuth, {
+        caption: item.caption,
+        mediaFbids,
+      });
+    } else if (item.mediaType === "video") {
+      const file = await downloadFbMedia(refs[0], contentType, "video.mp4");
+      res = await createVideoPost(page as PageAuth, {
+        description: item.caption,
+        video: file,
+      });
+    } else {
+      res = await createTextPost(page as PageAuth, {
+        message: item.caption,
+        link: item.link || undefined,
+      });
+    }
+
+    await db().updateDocument(DB(), FB_QUEUE_COLLECTION, item.$id, {
+      status: "published",
+      fbPostId: res.id,
+      error: null,
+    });
+    for (const ref of refs) await deleteFbMedia(ref); // hosting no longer needed
+  } catch (e) {
+    await db().updateDocument(DB(), FB_QUEUE_COLLECTION, item.$id, {
+      status: "failed",
+      error: String(e instanceof Error ? e.message : e).slice(0, 500),
+    });
+  }
+}
+
+/** Publish one specific item immediately (used by "Publish now"). */
+export async function publishFbItemNow(id: string): Promise<void> {
+  const doc = (await db().getDocument(
+    DB(),
+    FB_QUEUE_COLLECTION,
+    id
+  )) as unknown as FbQueueItem;
+  await publishItem(doc);
+}
+
+/**
+ * Publish everything that's due. Returns a summary. Safe to call from
+ * both the in-process worker and the cron route.
+ */
+export async function processDueFbPosts(): Promise<{ processed: number }> {
+  if (!fbQueueConfigured()) return { processed: 0 };
+  const now = Math.floor(Date.now() / 1000);
+  const res = await db().listDocuments(DB(), FB_QUEUE_COLLECTION, [
+    Query.equal("status", "pending"),
+    Query.lessThanEqual("scheduledAt", now),
+    Query.orderAsc("scheduledAt"),
+    Query.limit(10),
+  ]);
+  const due = res.documents as unknown as FbQueueItem[];
+  for (const item of due) await publishItem(item);
+  return { processed: due.length };
+}

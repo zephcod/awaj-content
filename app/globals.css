@@ -74,6 +74,26 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Native form-control chrome — the datetime-local calendar icon, a
+ * password field's reveal-icon (Edge's ::-ms-reveal), number spinners,
+ * etc. — is drawn by the browser, not by us, and defaults to a dark
+ * glyph that disappears against a dark input background. `color-scheme`
+ * tells the browser which built-in palette to render that chrome in, so
+ * it stays visible without any custom icon/filter hacks. Scoped to the
+ * same `.dark` toggle as the rest of the theme; text-fg on -input etc.
+ * already recolor per-theme via CSS vars, so this just brings native
+ * control chrome in line with them. */
+input,
+textarea,
+select {
+  color-scheme: light;
+}
+.dark input,
+.dark textarea,
+.dark select {
+  color-scheme: dark;
+}
+
 h1,
 h2,
 h3,

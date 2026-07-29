@@ -42,7 +42,10 @@ function Fields({ error }: { error?: string }) {
           name="password"
           required
           autoFocus
-          className="rounded-md border border-white/15 bg-navy px-3 py-2.5 text-sm text-white focus:outline-2 focus:outline-gold disabled:opacity-60"
+          // Fixed navy background regardless of the light/dark toggle (see
+          // globals.css) — force the dark native-control palette so the
+          // browser's password reveal icon stays visible against it.
+          className="rounded-md border border-white/15 bg-navy px-3 py-2.5 text-sm text-white [color-scheme:dark] focus:outline-2 focus:outline-gold disabled:opacity-60"
         />
         <span className="font-mono text-[10px] leading-relaxed text-white/30">
           Clients: use the same PIN as your Awaj ET report dashboard.

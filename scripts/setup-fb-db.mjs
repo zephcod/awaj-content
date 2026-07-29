@@ -1,11 +1,16 @@
 /**
- * One-time setup: creates the `ig_queue` collection in Appwrite.
- * Run from the project root:  node scripts/setup-ig-db.mjs
+ * One-time setup: creates the `fb_queue` collection in Appwrite.
+ * Run from the project root:  node scripts/setup-fb-db.mjs
  * Reads APPWRITE_* vars from .env.
+ *
+ * Unlike ig_queue/li_queue, this doesn't create or need a bucket — the
+ * Facebook queue stages media in the same shared "profile" bucket
+ * already used for Instagram Reel hosting (see MEDIA_BUCKET in
+ * lib/storage.ts). This script just verifies it's reachable.
  */
 
 import { readFileSync } from "node:fs";
-import { Client, Databases } from "node-appwrite";
+import { Client, Databases, Storage } from "node-appwrite";
 
 const raw = readFileSync(new URL("../.env", import.meta.url), "utf8");
 const env = {};
@@ -32,31 +37,29 @@ const client = new Client()
   .setKey(env.APPWRITE_API_KEY);
 const db = new Databases(client);
 const DB = env.APPWRITE_DATABASE_ID;
-const COLL = "ig_queue";
+const COLL = "fb_queue";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 try {
-  await db.createCollection(DB, COLL, "IG Queue");
-  console.log("✅ Created collection ig_queue");
+  await db.createCollection(DB, COLL, "Facebook Queue");
+  console.log("✅ Created collection fb_queue");
 } catch (e) {
-  if (e?.code === 409) console.log("• Collection ig_queue already exists");
+  if (e?.code === 409) console.log("• Collection fb_queue already exists");
   else throw e;
 }
 
 const attrs = [
   ["string", "pageId", 64, true],
-  ["string", "igUserId", 64, true],
-  ["string", "igUsername", 128, false],
-  ["string", "caption", 2200, false],
-  ["string", "fbPhotoId", 64, true],
-  ["string", "mediaType", 16, false], // image | carousel | reel
+  ["string", "caption", 63000, false],
+  ["string", "link", 2000, false],
+  ["string", "mediaType", 16, true], // text | image | multiImage | video
   ["string", "mediaRefs", 2000, false], // JSON array of Appwrite file ids
-  ["string", "thumbRef", 64, false], // Appwrite file id of a custom Reel cover
+  ["string", "mediaContentType", 64, false],
   ["integer", "scheduledAt", null, true],
   ["string", "status", 16, true],
   ["string", "error", 500, false],
-  ["string", "igMediaId", 64, false],
+  ["string", "fbPostId", 128, false],
 ];
 
 for (const [type, key, size, required] of attrs) {
@@ -84,24 +87,23 @@ try {
   else console.log(`⚠️  Index creation: ${e.message} (create manually if queries are slow)`);
 }
 
-// ── Public-read bucket for Instagram Reels video hosting ──
-// Reusing an existing bucket (id below) rather than creating a new one —
-// this Appwrite project's plan caps the number of buckets. It must have
-// `read(any)` permission (and fileSecurity off, or per-file public read)
-// so Instagram can fetch the uploaded video URL.
-const IG_MEDIA_BUCKET_ID = "658477e7eef2f71d1693";
-const { Storage } = await import("node-appwrite");
-const storage = new Storage(client);
+// Index for the per-page listing query (pageId + status + scheduledAt)
 try {
-  const bucket = await storage.getBucket(IG_MEDIA_BUCKET_ID);
-  const publicRead = bucket.$permissions.includes('read("any")');
-  console.log(
-    publicRead
-      ? `✅ Bucket ${IG_MEDIA_BUCKET_ID} (${bucket.name}) has public read`
-      : `⚠️  Bucket ${IG_MEDIA_BUCKET_ID} (${bucket.name}) lacks read("any") — Reel publishing will fail`
-  );
+  await db.createIndex(DB, COLL, "page_idx", "key", ["pageId", "status", "scheduledAt"]);
+  console.log("✅ Index page_idx");
 } catch (e) {
-  console.log(`⚠️  Could not verify bucket ${IG_MEDIA_BUCKET_ID}: ${e.message}`);
+  if (e?.code === 409) console.log("• Index page_idx already exists");
+  else console.log(`⚠️  Index creation: ${e.message} (create manually if queries are slow)`);
 }
 
-console.log("\n🎉 ig_queue is ready.\n");
+// ── Verify the shared media bucket (no new bucket — reuses MEDIA_BUCKET) ──
+const MEDIA_BUCKET_ID = "658477e7eef2f71d1693";
+const storage = new Storage(client);
+try {
+  const bucket = await storage.getBucket(MEDIA_BUCKET_ID);
+  console.log(`✅ Shared bucket ${MEDIA_BUCKET_ID} (${bucket.name}) is reachable`);
+} catch (e) {
+  console.log(`⚠️  Could not verify bucket ${MEDIA_BUCKET_ID}: ${e.message}`);
+}
+
+console.log("\n🎉 fb_queue is ready.\n");

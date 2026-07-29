@@ -4,16 +4,19 @@
  * Constraints that shape this module:
  *  - An IG professional account must be linked to the Facebook Page;
  *    it is discovered via `GET /{page-id}?fields=instagram_business_account`.
- *  - IG only accepts a PUBLIC image URL (no direct upload). We host
- *    images as unpublished Facebook page photos and pass the fbcdn URL,
- *    resolved fresh at publish time (fbcdn signatures expire).
+ *  - IG only accepts a PUBLIC URL for any media (no direct upload) — all
+ *    callers here pass an Appwrite-hosted URL (lib/storage.ts's
+ *    mediaUrl()). Earlier this borrowed Facebook's unpublished-page-photo
+ *    mechanism instead; that was fragile (an unpublished photo not
+ *    attached to a still-live post doesn't reliably survive a long
+ *    wait) and has been dropped.
  *  - No native scheduling: publish = create container → poll status →
  *    media_publish. Containers expire in 24h, so scheduled posts live
  *    in our own queue (lib/igqueue.ts) until due.
  *  - Rate limit: ~25 API-published posts per IG account per 24h.
  */
 
-import { getPhotoUrl, graph, GraphError, type PageAuth } from "./facebook";
+import { graph, GraphError, type PageAuth } from "./facebook";
 
 export type IgAccount = {
   id: string;
@@ -119,17 +122,16 @@ async function publishContainer(
 // ── Publish flows ─────────────────────────────────────────────────
 
 /**
- * Publish a single-image post NOW. `fbPhotoId` is an unpublished FB
- * page photo used as CDN hosting; its URL is resolved fresh here.
+ * Publish a single-image post NOW. `imageUrl` must be a public URL
+ * (Appwrite storage — see lib/storage.ts's mediaUrl()).
  */
 export async function publishImageToIg(
   page: PageAuth,
   igUserId: string,
-  opts: { caption: string; fbPhotoId: string }
+  opts: { caption: string; imageUrl: string }
 ): Promise<{ id: string }> {
-  const imageUrl = await getPhotoUrl(page, opts.fbPhotoId);
   const container = await createContainer(page, igUserId, {
-    image_url: imageUrl,
+    image_url: opts.imageUrl,
     caption: opts.caption.slice(0, 2200),
   });
   await waitForContainer(page, container, { tries: 10, delayMs: 2000 });
@@ -144,14 +146,13 @@ export async function publishImageToIg(
 export async function publishCarouselToIg(
   page: PageAuth,
   igUserId: string,
-  opts: { caption: string; fbPhotoIds: string[] }
+  opts: { caption: string; imageUrls: string[] }
 ): Promise<{ id: string }> {
-  if (opts.fbPhotoIds.length < 2 || opts.fbPhotoIds.length > 10) {
+  if (opts.imageUrls.length < 2 || opts.imageUrls.length > 10) {
     throw new GraphError("Instagram carousels need 2–10 images.");
   }
   const children: string[] = [];
-  for (const fbPhotoId of opts.fbPhotoIds) {
-    const imageUrl = await getPhotoUrl(page, fbPhotoId);
+  for (const imageUrl of opts.imageUrls) {
     const child = await createContainer(page, igUserId, {
       image_url: imageUrl,
       is_carousel_item: "true",
@@ -173,19 +174,23 @@ export async function publishCarouselToIg(
 /**
  * Publish a video as a Reel NOW (shared to feed). `videoUrl` must be a
  * public URL (Appwrite storage — see lib/storage.ts). Processing takes
- * minutes; call this from the queue worker only.
+ * minutes; call this from the queue worker only. `coverUrl`, if given,
+ * is a public URL to a custom cover image — takes precedence over
+ * Instagram's own auto-selected frame (Graph API's `cover_url` param).
  */
 export async function publishReelToIg(
   page: PageAuth,
   igUserId: string,
-  opts: { caption: string; videoUrl: string }
+  opts: { caption: string; videoUrl: string; coverUrl?: string }
 ): Promise<{ id: string }> {
-  const container = await createContainer(page, igUserId, {
+  const params: Record<string, string> = {
     media_type: "REELS",
     video_url: opts.videoUrl,
     caption: opts.caption.slice(0, 2200),
     share_to_feed: "true",
-  });
+  };
+  if (opts.coverUrl) params.cover_url = opts.coverUrl;
+  const container = await createContainer(page, igUserId, params);
   await waitForContainer(page, container, { tries: 36, delayMs: 10_000 });
   return publishContainer(page, igUserId, container);
 }

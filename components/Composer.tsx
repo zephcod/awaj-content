@@ -41,9 +41,11 @@ export default function Composer({
   const [toLi, setToLi] = useState(false);
   const [previews, setPreviews] = useState<string[]>([]);
   const [videoName, setVideoName] = useState<string | null>(null);
+  const [thumbPreview, setThumbPreview] = useState<string | null>(null);
   const [linkUrl, setLinkUrl] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
+  const thumbRef = useRef<HTMLInputElement>(null);
 
   const minTime = toLocalInputValue(new Date(Date.now() + 15 * 60 * 1000));
   const maxTime = toLocalInputValue(
@@ -72,11 +74,25 @@ export default function Composer({
     const f = e.target.files?.[0];
     setVideoName(f ? f.name : null);
     if (f) clearPhotos(); // photos and video are exclusive
+    else clearThumb(); // no video, no cover
   }
 
   function clearVideo() {
     if (videoRef.current) videoRef.current.value = "";
     setVideoName(null);
+    clearThumb(); // cover only makes sense alongside a video
+  }
+
+  function onPickThumb(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (thumbPreview) URL.revokeObjectURL(thumbPreview);
+    setThumbPreview(f ? URL.createObjectURL(f) : null);
+  }
+
+  function clearThumb() {
+    if (thumbRef.current) thumbRef.current.value = "";
+    if (thumbPreview) URL.revokeObjectURL(thumbPreview);
+    setThumbPreview(null);
   }
 
   // Convert the datetime-local value to unix seconds before submit.
@@ -318,6 +334,46 @@ export default function Composer({
           </p>
         )}
       </div>
+
+      {/* Reel cover image (Instagram only, optional) */}
+      {toIg && videoName && (
+        <div className="mt-4">
+          <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
+            Reel cover (optional)
+          </span>
+          <div className="mt-2 flex items-center gap-3">
+            <input
+              ref={thumbRef}
+              type="file"
+              name="igThumbnail"
+              accept="image/*"
+              onChange={onPickThumb}
+              className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-navy file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-navy-soft"
+            />
+            {thumbPreview && (
+              <button
+                type="button"
+                onClick={clearThumb}
+                className="font-mono text-[11px] text-muted underline hover:text-amber"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+          {thumbPreview && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={thumbPreview}
+              alt="Reel cover preview"
+              className="mt-3 h-24 w-24 rounded-md border border-edge object-cover"
+            />
+          )}
+          <p className="mt-2 font-mono text-[10px] text-muted">
+            Custom cover image (recommended 1080×1920, 9:16). Leave blank and
+            Instagram picks a frame from the video automatically.
+          </p>
+        </div>
+      )}
 
       {/* Timing */}
       <div className="mt-5 border-t border-edge pt-4">

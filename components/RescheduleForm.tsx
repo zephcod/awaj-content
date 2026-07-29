@@ -2,7 +2,13 @@
 
 import { Clock } from "lucide-react";
 import { useActionState, useState } from "react";
-import { reschedule, rescheduleIg, rescheduleLi, type ActionState } from "@/app/actions";
+import {
+  reschedule,
+  rescheduleFbQueued,
+  rescheduleIg,
+  rescheduleLi,
+  type ActionState,
+} from "@/app/actions";
 
 function toLocalInputValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -18,13 +24,18 @@ export default function RescheduleForm({
 }: {
   postId: string;
   currentUnix: number;
-  platform?: "fb" | "ig" | "li";
+  platform?: "fb" | "fbq" | "ig" | "li";
 }) {
   const [open, setOpen] = useState(false);
-  const [state, formAction, pending] = useActionState<ActionState, FormData>(
-    platform === "ig" ? rescheduleIg : platform === "li" ? rescheduleLi : reschedule,
-    null
-  );
+  const action =
+    platform === "ig"
+      ? rescheduleIg
+      : platform === "li"
+        ? rescheduleLi
+        : platform === "fbq"
+          ? rescheduleFbQueued
+          : reschedule;
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(action, null);
 
   if (!open) {
     return (

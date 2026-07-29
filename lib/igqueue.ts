@@ -4,6 +4,12 @@
  * can't, so queued IG posts live here until due and are published by
  * `processDueIgPosts()` — driven by the in-process worker
  * (instrumentation.ts) and/or the cron route (/api/cron/ig).
+ *
+ * All media (image, carousel photos, Reel video, Reel cover) is staged
+ * in the shared Appwrite bucket (lib/storage.ts) at compose time —
+ * `mediaRefs` is always Appwrite file ids, never a Facebook photo id
+ * (an earlier version borrowed FB's unpublished-page-photo mechanism
+ * instead; that was fragile — see lib/instagram.ts's header comment).
  */
 
 import { Client, Databases, ID, Query } from "node-appwrite";
@@ -14,7 +20,7 @@ import {
   publishReelToIg,
 } from "./instagram";
 import { listPages } from "./pages";
-import { deleteIgVideo, igVideoUrl } from "./storage";
+import { deleteIgMedia, mediaUrl } from "./storage";
 
 export const IG_QUEUE_COLLECTION = "ig_queue";
 
@@ -30,8 +36,10 @@ export type IgQueueItem = {
   fbPhotoId: string;
   /** "image" (default for legacy rows) | "carousel" | "reel" */
   mediaType?: IgMediaType;
-  /** JSON array: FB photo ids (image/carousel) or Appwrite file id (reel). */
+  /** JSON array of Appwrite file ids: photo(s) for image/carousel, video for reel. */
   mediaRefs?: string;
+  /** Appwrite file id of a custom Reel cover image, if one was provided. */
+  thumbRef?: string;
   scheduledAt: number; // unix seconds
   status: "pending" | "publishing" | "published" | "failed";
   error?: string;
@@ -60,8 +68,10 @@ export async function enqueueIgPost(item: {
   igUsername?: string;
   caption: string;
   mediaType: IgMediaType;
-  /** FB photo ids (image/carousel) or a single Appwrite file id (reel). */
+  /** Appwrite file ids: photo(s) for image/carousel, video for reel. */
   mediaRefs: string[];
+  /** Appwrite file id of a custom Reel cover image (reel only, optional). */
+  thumbRef?: string;
   scheduledAt: number;
 }): Promise<void> {
   const { mediaRefs, ...rest } = item;
@@ -97,7 +107,15 @@ export async function rescheduleIgItem(
 }
 
 export async function deleteIgItem(id: string): Promise<void> {
+  const doc = (await db().getDocument(
+    DB(),
+    IG_QUEUE_COLLECTION,
+    id
+  )) as unknown as IgQueueItem;
   await db().deleteDocument(DB(), IG_QUEUE_COLLECTION, id);
+  const refs: string[] = doc.mediaRefs ? JSON.parse(doc.mediaRefs) : [];
+  for (const ref of refs) await deleteIgMedia(ref);
+  if (doc.thumbRef) await deleteIgMedia(doc.thumbRef);
 }
 
 // ── Publisher ─────────────────────────────────────────────────────
@@ -120,18 +138,18 @@ async function publishItem(item: IgQueueItem): Promise<void> {
     if (type === "carousel") {
       res = await publishCarouselToIg(page, item.igUserId, {
         caption: item.caption,
-        fbPhotoIds: refs,
+        imageUrls: refs.map(mediaUrl),
       });
     } else if (type === "reel") {
       res = await publishReelToIg(page, item.igUserId, {
         caption: item.caption,
-        videoUrl: igVideoUrl(refs[0]),
+        videoUrl: mediaUrl(refs[0]),
+        coverUrl: item.thumbRef ? mediaUrl(item.thumbRef) : undefined,
       });
-      await deleteIgVideo(refs[0]); // hosting no longer needed
     } else {
       res = await publishImageToIg(page, item.igUserId, {
         caption: item.caption,
-        fbPhotoId: refs[0],
+        imageUrl: mediaUrl(refs[0]),
       });
     }
 
@@ -140,6 +158,9 @@ async function publishItem(item: IgQueueItem): Promise<void> {
       igMediaId: res.id,
       error: null,
     });
+    // Hosting no longer needed once IG has fetched and processed it.
+    for (const ref of refs) await deleteIgMedia(ref);
+    if (item.thumbRef) await deleteIgMedia(item.thumbRef);
   } catch (e) {
     await db().updateDocument(DB(), IG_QUEUE_COLLECTION, item.$id, {
       status: "failed",

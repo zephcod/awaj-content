@@ -1,9 +1,9 @@
 /**
  * In-process worker: while the app is running (dev or self-hosted
- * `next start`), check the Instagram + LinkedIn queues every 60s and
- * publish due posts. On serverless deploys use the cron routes
- * (/api/cron/ig, /api/cron/li) instead — these intervals won't survive
- * there, which is fine.
+ * `next start`), check the Facebook + Instagram + LinkedIn queues every
+ * 60s and publish due posts. On serverless deploys use the cron routes
+ * (/api/cron/fb, /api/cron/ig, /api/cron/li) instead — these intervals
+ * won't survive there, which is fine.
  */
 
 export async function register() {
@@ -11,9 +11,29 @@ export async function register() {
 
   // Guard against duplicate intervals across dev HMR reloads.
   const g = globalThis as unknown as {
+    __fbWorkerStarted?: boolean;
     __igWorkerStarted?: boolean;
     __liWorkerStarted?: boolean;
   };
+
+  if (!g.__fbWorkerStarted) {
+    g.__fbWorkerStarted = true;
+    const { fbQueueConfigured } = await import("./lib/env");
+    if (fbQueueConfigured()) {
+      const { processDueFbPosts } = await import("./lib/fbqueue");
+      setInterval(async () => {
+        try {
+          const { processed } = await processDueFbPosts();
+          if (processed > 0) {
+            console.log(`[fb-worker] published ${processed} due Facebook post(s)`);
+          }
+        } catch (e) {
+          console.error("[fb-worker] error:", e);
+        }
+      }, 60_000);
+      console.log("[fb-worker] Facebook queue worker started (60s interval)");
+    }
+  }
 
   if (!g.__igWorkerStarted) {
     g.__igWorkerStarted = true;
