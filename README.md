@@ -1,4 +1,4 @@
-# Awaj ET — FB Scheduler
+# Awaj ET — Social Platform Manager
 
 Multi-page Facebook post scheduler built on the Meta Graph API. Same
 stack and auth pattern as `awaj-leads` (Next.js 15 App Router, Tailwind
