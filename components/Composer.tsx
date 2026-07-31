@@ -39,6 +39,23 @@ export default function Composer({
   const [toFb, setToFb] = useState(true);
   const [toIg, setToIg] = useState(false);
   const [toLi, setToLi] = useState(false);
+  const [igAsStory, setIgAsStory] = useState(false);
+
+  /** Stories are Instagram-only — flipping it on clears the other destinations
+   * and the link field (which disappears from the form along with them). */
+  function onToggleStory(checked: boolean) {
+    setIgAsStory(checked);
+    if (checked) {
+      setToFb(false);
+      setToLi(false);
+      setLinkUrl("");
+    }
+  }
+
+  function onToggleIg(checked: boolean) {
+    setToIg(checked);
+    if (!checked) setIgAsStory(false); // Story mode needs Instagram on
+  }
   const [previews, setPreviews] = useState<string[]>([]);
   const [videoName, setVideoName] = useState<string | null>(null);
   const [thumbPreview, setThumbPreview] = useState<string | null>(null);
@@ -58,7 +75,7 @@ export default function Composer({
       : minTime;
 
   function onPickPhotos(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []).slice(0, 10);
+    const files = Array.from(e.target.files ?? []).slice(0, igAsStory ? 1 : 10);
     previews.forEach((p) => URL.revokeObjectURL(p));
     setPreviews(files.map((f) => URL.createObjectURL(f)));
     if (files.length > 0) clearVideo(); // photos and video are exclusive
@@ -137,16 +154,20 @@ export default function Composer({
         </span>
         <div className="mt-2 flex flex-wrap gap-2">
           <label
-            className={`flex cursor-pointer items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors ${
-              toFb
-                ? "border-amber-400 bg-navy text-gold"
-                : "border-edge text-muted hover:text-fg"
+            className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors ${
+              igAsStory
+                ? "cursor-not-allowed border-edge text-muted/40"
+                : toFb
+                  ? "cursor-pointer border-amber-400 bg-navy text-gold"
+                  : "cursor-pointer border-edge text-muted hover:text-fg"
             }`}
+            title={igAsStory ? "Stories are Instagram-only" : undefined}
           >
             <input
               type="checkbox"
               name="dest_fb"
               checked={toFb}
+              disabled={igAsStory}
               onChange={(e) => setToFb(e.target.checked)}
               className="hidden"
             />
@@ -173,7 +194,7 @@ export default function Composer({
               name="dest_ig"
               checked={toIg}
               disabled={!igLinked}
-              onChange={(e) => setToIg(e.target.checked)}
+              onChange={(e) => onToggleIg(e.target.checked)}
               className="hidden"
             />
             <span className="flex items-center gap-1.5">
@@ -183,21 +204,25 @@ export default function Composer({
           </label>
           <label
             className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors ${
-              !liLinked
+              !liLinked || igAsStory
                 ? "cursor-not-allowed border-edge text-muted/40"
                 : toLi
                   ? "cursor-pointer border-amber-400 bg-navy text-gold"
                   : "cursor-pointer border-edge text-muted hover:text-fg"
             }`}
             title={
-              liLinked ? undefined : "No LinkedIn organization connected yet"
+              igAsStory
+                ? "Stories are Instagram-only"
+                : liLinked
+                  ? undefined
+                  : "No LinkedIn organization connected yet"
             }
           >
             <input
               type="checkbox"
               name="dest_li"
               checked={toLi}
-              disabled={!liLinked}
+              disabled={!liLinked || igAsStory}
               onChange={(e) => setToLi(e.target.checked)}
               className="hidden"
             />
@@ -219,47 +244,77 @@ export default function Composer({
             LinkedIn Page needs to connect it (see /settings/linkedin).
           </p>
         )}
+        {toIg && (
+          <label className="mt-3 flex cursor-pointer items-center gap-2 text-xs text-muted">
+            <input
+              type="checkbox"
+              name="ig_story"
+              checked={igAsStory}
+              onChange={(e) => onToggleStory(e.target.checked)}
+              className="h-3.5 w-3.5 accent-gold"
+            />
+            Post as a Story instead of a feed post
+            <span className="font-mono text-[10px] text-muted/70">
+              (Instagram-only · one photo or video · no caption)
+            </span>
+          </label>
+        )}
       </div>
 
-      <label className="mt-4 block">
-        <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
-          Message
-        </span>
-        <textarea
-          name="message"
-          rows={6}
-          placeholder="What's happening at Awaj ET?"
-          className="mt-2 w-full resize-y rounded-md border border-edge bg-input px-3 py-2.5 text-sm focus:outline-2 focus:outline-gold"
-        />
-      </label>
+      {!igAsStory && (
+        <label className="mt-4 block">
+          <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
+            Message
+          </span>
+          <textarea
+            name="message"
+            rows={6}
+            placeholder="What's happening at Awaj ET?"
+            className="mt-2 w-full resize-y rounded-md border border-edge bg-input px-3 py-2.5 text-sm focus:outline-2 focus:outline-gold"
+          />
+        </label>
+      )}
+
+      {igAsStory && (
+        <p className="mt-4 rounded-md bg-navy/5 px-3 py-2 font-mono text-[11px] text-muted">
+          Instagram Stories don&apos;t support caption text via the API — any
+          text needs to already be part of the photo or video itself.
+        </p>
+      )}
 
       {/* Link (Facebook only — renders a preview card) */}
-      <label className="mt-4 block">
-        <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
-          Link (optional, Facebook only)
-        </span>
-        <input
-          type="url"
-          name="link"
-          value={linkUrl}
-          onChange={(e) => setLinkUrl(e.target.value)}
-          placeholder="https://awajet.com/offer"
-          className="mt-2 w-full rounded-md border border-edge bg-input px-3 py-2.5 text-sm focus:outline-2 focus:outline-gold"
-        />
-        {linkUrl && (
-          <span className="mt-1.5 block font-mono text-[10px] text-muted">
-            Facebook shows the link's preview card — uploaded media can't be
-            combined with it, and Instagram/LinkedIn don't support link
-            posts here (put the URL in the caption text instead).
+      {!igAsStory && (
+        <label className="mt-4 block">
+          <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
+            Link (optional, Facebook only)
           </span>
-        )}
-      </label>
+          <input
+            type="url"
+            name="link"
+            value={linkUrl}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            placeholder="https://awajet.com/offer"
+            className="mt-2 w-full rounded-md border border-edge bg-input px-3 py-2.5 text-sm focus:outline-2 focus:outline-gold"
+          />
+          {linkUrl && (
+            <span className="mt-1.5 block font-mono text-[10px] text-muted">
+              Facebook shows the link's preview card — uploaded media can't be
+              combined with it, and Instagram/LinkedIn don't support link
+              posts here (put the URL in the caption text instead).
+            </span>
+          )}
+        </label>
+      )}
 
-      {/* Photos (up to 10 → multi-photo on FB, carousel on IG) */}
+      {/* Photos (up to 10 → multi-photo on FB, carousel on IG; 1 for a Story) */}
       <div className="mt-4">
         <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
           Photos{" "}
-          {toIg ? "(IG: 1 = post, 2–10 = carousel)" : "(up to 10, optional)"}
+          {igAsStory
+            ? "(IG Story: exactly 1)"
+            : toIg
+              ? "(IG: 1 = post, 2–10 = carousel)"
+              : "(up to 10, optional)"}
         </span>
         <div className="mt-2 flex items-center gap-3">
           <input
@@ -267,7 +322,7 @@ export default function Composer({
             type="file"
             name="photos"
             accept="image/*"
-            multiple
+            multiple={!igAsStory}
             onChange={onPickPhotos}
             className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-navy file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-navy-soft"
           />
@@ -301,10 +356,15 @@ export default function Composer({
         )}
       </div>
 
-      {/* Video (FB video post / IG Reel) */}
+      {/* Video (FB video post / IG Reel / IG Story) */}
       <div className="mt-4">
         <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
-          Video {toIg ? "(published as a Reel)" : "(optional)"}
+          Video{" "}
+          {igAsStory
+            ? "(published as a Story)"
+            : toIg
+              ? "(published as a Reel)"
+              : "(optional)"}
         </span>
         <div className="mt-2 flex items-center gap-3">
           <input
@@ -330,13 +390,15 @@ export default function Composer({
             <Video className="h-3 w-3 shrink-0" />
             {videoName}
             {toIg &&
-              " — Reels are queued and publish once Instagram finishes processing (~1–3 min)."}
+              (igAsStory
+                ? " — Story videos are queued and publish once Instagram finishes processing (~1–3 min)."
+                : " — Reels are queued and publish once Instagram finishes processing (~1–3 min).")}
           </p>
         )}
       </div>
 
-      {/* Reel cover image (Instagram only, optional) */}
-      {toIg && videoName && (
+      {/* Reel cover image (Instagram Reels only — Stories don't support a custom cover via the API) */}
+      {toIg && videoName && !igAsStory && (
         <div className="mt-4">
           <span className="font-mono text-[11px] tracking-[0.12em] text-muted uppercase">
             Reel cover (optional)

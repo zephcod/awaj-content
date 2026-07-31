@@ -30,6 +30,7 @@ import {
   getIgAccount,
   publishCarouselToIg,
   publishImageToIg,
+  publishStoryToIg,
 } from "@/lib/instagram";
 import {
   LinkedInApiError,
@@ -129,6 +130,11 @@ export async function createPost(
   const toFb = formData.get("dest_fb") === "on";
   const toIg = formData.get("dest_ig") === "on";
   const toLi = formData.get("dest_li") === "on";
+  // Instagram Story: single photo or video, no caption, no carousel, and
+  // (enforced below) Instagram-only — the Composer forces this in the UI
+  // by disabling Facebook/LinkedIn while it's on, since the caption field
+  // is shared across all three and Stories never send one.
+  const igAsStory = formData.get("ig_story") === "on";
 
   // ── Validation ──
   if (!toFb && !toIg && !toLi) {
@@ -167,6 +173,24 @@ export async function createPost(
   }
   if (toIg && photos.length === 0 && !video) {
     return { ok: false, message: "Instagram posts need a photo or video." };
+  }
+  if (igAsStory) {
+    if (!toIg) {
+      return { ok: false, message: "Turn on Instagram to post a Story." };
+    }
+    if (toFb || toLi) {
+      return {
+        ok: false,
+        message:
+          "Instagram Stories can only go to Instagram — untick Facebook/LinkedIn, or turn off \"Post as a Story\".",
+      };
+    }
+    if (photos.length > 1) {
+      return {
+        ok: false,
+        message: "Instagram Stories support one photo or one video — not a carousel.",
+      };
+    }
   }
   if (scheduledAt !== undefined) {
     if (!Number.isFinite(scheduledAt)) {
@@ -306,7 +330,26 @@ export async function createPost(
 
     // ── Instagram ──
     if (toIg && ig && page) {
-      if (video) {
+      if (video && igAsStory) {
+        // Story videos, like Reels, always go through the queue —
+        // processing takes minutes. No caption, no cover (Stories don't
+        // support either via the API).
+        const fileId = await uploadIgMedia(video);
+        await enqueueIgPost({
+          pageId: page.id,
+          igUserId: ig.id,
+          igUsername: ig.username,
+          caption: "",
+          mediaType: "storyVideo",
+          mediaRefs: [fileId],
+          scheduledAt: scheduledAt ?? Math.floor(Date.now() / 1000),
+        });
+        done.push(
+          scheduledAt
+            ? "Instagram Story video (queued)"
+            : "Instagram Story video (queued — publishes within ~2 min)"
+        );
+      } else if (video) {
         // Reels always go through the queue: processing takes minutes.
         const fileId = await uploadIgMedia(video);
         let thumbRef: string | undefined;
@@ -326,6 +369,26 @@ export async function createPost(
             ? "Instagram Reel (queued)"
             : "Instagram Reel (queued — publishes within ~2 min)"
         );
+      } else if (igAsStory) {
+        // Story image: exactly one photo, no caption, no carousel.
+        if (scheduledAt) {
+          await enqueueIgPost({
+            pageId: page.id,
+            igUserId: ig.id,
+            igUsername: ig.username,
+            caption: "",
+            mediaType: "storyImage",
+            mediaRefs: igMediaRefs,
+            scheduledAt,
+          });
+          done.push("Instagram Story (queued)");
+        } else {
+          await publishStoryToIg(page, ig.id, {
+            imageUrl: mediaUrl(igMediaRefs[0]),
+          });
+          await deleteIgMedia(igMediaRefs[0]);
+          done.push("Instagram Story");
+        }
       } else if (scheduledAt) {
         await enqueueIgPost({
           pageId: page.id,

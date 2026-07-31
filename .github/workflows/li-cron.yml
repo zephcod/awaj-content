@@ -1,0 +1,34 @@
+name: LinkedIn queue cron
+
+# Publishes due LinkedIn posts (lib/liqueue.ts) by hitting the app's cron
+# endpoint. LinkedIn has no native scheduling at all, so this — along
+# with the in-process worker (instrumentation.ts) — is the only thing
+# that publishes queued LinkedIn posts.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   APP_URL      e.g. https://scheduler.awajet.com  (no trailing slash)
+#   CRON_SECRET  must match CRON_SECRET in the app's env
+#   (same secrets already used by ig-cron.yml / fb-cron.yml — nothing
+#   new to add if those workflows are already configured)
+#
+# Can also be triggered manually from the Actions tab (workflow_dispatch).
+
+on:
+  schedule:
+    # Every 5 minutes — GitHub's practical minimum. Actual runs are
+    # best-effort and often land 3–15 minutes late under load.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  publish-due:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Publish due LinkedIn posts
+        run: |
+          set -e
+          resp=$(curl -fsS --max-time 480 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/li")
+          echo "Response: $resp"

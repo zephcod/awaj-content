@@ -18,25 +18,32 @@ import {
   publishCarouselToIg,
   publishImageToIg,
   publishReelToIg,
+  publishStoryToIg,
 } from "./instagram";
 import { listPages } from "./pages";
 import { deleteIgMedia, mediaUrl } from "./storage";
 
 export const IG_QUEUE_COLLECTION = "ig_queue";
 
-export type IgMediaType = "image" | "carousel" | "reel";
+export type IgMediaType =
+  | "image"
+  | "carousel"
+  | "reel"
+  | "storyImage"
+  | "storyVideo";
 
 export type IgQueueItem = {
   $id: string;
   pageId: string;
   igUserId: string;
   igUsername?: string;
+  /** Ignored for storyImage/storyVideo — Stories don't take a caption via the API. */
   caption: string;
   /** First media ref (kept for schema compat; see mediaRefs). */
   fbPhotoId: string;
-  /** "image" (default for legacy rows) | "carousel" | "reel" */
+  /** "image" (default for legacy rows) | "carousel" | "reel" | "storyImage" | "storyVideo" */
   mediaType?: IgMediaType;
-  /** JSON array of Appwrite file ids: photo(s) for image/carousel, video for reel. */
+  /** JSON array of Appwrite file ids: photo(s) for image/carousel, single file for reel/story. */
   mediaRefs?: string;
   /** Appwrite file id of a custom Reel cover image, if one was provided. */
   thumbRef?: string;
@@ -145,6 +152,14 @@ async function publishItem(item: IgQueueItem): Promise<void> {
         caption: item.caption,
         videoUrl: mediaUrl(refs[0]),
         coverUrl: item.thumbRef ? mediaUrl(item.thumbRef) : undefined,
+      });
+    } else if (type === "storyImage") {
+      res = await publishStoryToIg(page, item.igUserId, {
+        imageUrl: mediaUrl(refs[0]),
+      });
+    } else if (type === "storyVideo") {
+      res = await publishStoryToIg(page, item.igUserId, {
+        videoUrl: mediaUrl(refs[0]),
       });
     } else {
       res = await publishImageToIg(page, item.igUserId, {

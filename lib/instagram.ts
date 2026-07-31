@@ -194,3 +194,30 @@ export async function publishReelToIg(
   await waitForContainer(page, container, { tries: 36, delayMs: 10_000 });
   return publishContainer(page, igUserId, container);
 }
+
+/**
+ * Publish a Story (image or video, exactly one — never both). Stories
+ * don't take a caption at all via the API; any text has to already be
+ * baked into the media. No carousel support either. Video stories get
+ * the same generous poll ceiling as Reels since they go through the
+ * same processing pipeline; images finish in seconds.
+ */
+export async function publishStoryToIg(
+  page: PageAuth,
+  igUserId: string,
+  opts: { imageUrl?: string; videoUrl?: string }
+): Promise<{ id: string }> {
+  if (!opts.imageUrl === !opts.videoUrl) {
+    throw new GraphError("An Instagram Story needs exactly one image or video.");
+  }
+  const params: Record<string, string> = { media_type: "STORIES" };
+  if (opts.imageUrl) params.image_url = opts.imageUrl;
+  if (opts.videoUrl) params.video_url = opts.videoUrl;
+  const container = await createContainer(page, igUserId, params);
+  await waitForContainer(
+    page,
+    container,
+    opts.videoUrl ? { tries: 36, delayMs: 10_000 } : { tries: 10, delayMs: 2000 }
+  );
+  return publishContainer(page, igUserId, container);
+}

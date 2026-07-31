@@ -96,19 +96,33 @@ design:
    - an in-process worker (starts with the app, checks every 60s), and
    - `GET /api/cron/ig` for serverless deploys, driven by a GitHub
      Actions schedule (`.github/workflows/ig-cron.yml`, every 5 min).
-     Set repo secrets `APP_URL` + `CRON_SECRET` (must match the app's
-     `CRON_SECRET` env). Note: GitHub schedules are best-effort — runs
-     often land 3–15 min late, so treat IG publish times as "within
-     ~15 minutes". On a PRIVATE repo a 5-min schedule (~9,000 billed
-     minutes/month) exceeds the 2,000 free minutes — use a public
-     repo, widen the interval (e.g. `*/15`), or an external pinger
-     like cron-job.org. GitHub also auto-disables schedules in repos
-     with no activity for 60 days — re-enable from the Actions tab.
+
+   The exact same pattern drives the Facebook queue
+   (`.github/workflows/fb-cron.yml` → `/api/cron/fb`) and the LinkedIn
+   queue (`.github/workflows/li-cron.yml` → `/api/cron/li`) — Facebook's
+   own scheduler is no longer used for new posts at all (see "How
+   Facebook scheduling works" above), so `fb-cron.yml` is just as load-
+   bearing as `ig-cron.yml`, not a nice-to-have.
+
+   All three workflows read the same two repo secrets (Settings →
+   Secrets and variables → Actions):
+   - `APP_URL` — e.g. `https://scheduler.awajet.com` (no trailing slash)
+   - `CRON_SECRET` — must match `CRON_SECRET` in the app's env
+
+   Note: GitHub schedules are best-effort — runs often land 3–15 min
+   late, so treat every queue's publish time as "within ~15 minutes".
+   Running three separate 5-min schedules roughly triples the Actions
+   minutes billed versus running just one — on a PRIVATE repo, three
+   `*/5 * * * *` schedules (~27,000 billed minutes/month) is well past
+   the 2,000 free minutes; use a public repo, widen the interval (e.g.
+   `*/15`), or an external pinger like cron-job.org. GitHub also
+   auto-disables schedules in repos with no activity for 60 days —
+   re-enable from the Actions tab.
 
    ⚠️ If neither the app nor a cron is running at the scheduled time,
-   the post publishes on next startup. Facebook posts are unaffected —
-   Meta holds those natively. IG rate limit: ~25 API posts per account
-   per 24h (a carousel counts as one).
+   the post publishes on next startup — for any of the three queues,
+   including Facebook. Rate limits: IG ~25 API posts per account per
+   24h (a carousel counts as one).
 
 ### Media type mapping
 
@@ -127,6 +141,18 @@ field, Instagram-only, shown once a video is attached) — staged in the
 same bucket and passed as the Graph API's `cover_url` param, which takes
 precedence over Instagram's own auto-picked frame. Leave it blank and
 Instagram behaves as before.
+
+### Stories (Instagram only)
+
+Composer's "Post as a Story" checkbox (only shown once Instagram is
+selected) publishes to the 24h Stories surface instead of the feed —
+one photo or one video, no carousel. Checking it forces Instagram as
+the sole destination and hides the caption field: the Stories endpoint
+doesn't accept a caption at all via the API, so any text has to already
+be part of the image/video itself. Story videos are queued exactly like
+Reels (processing takes minutes); Story images publish immediately
+unless scheduled. No custom cover support for Stories (that's Reels-only
+— see `cover_url` above).
 
 IG Reels always run through the queue (even "publish now") because
 Instagram's video processing takes minutes — the worker polls the

@@ -1,0 +1,35 @@
+name: Facebook queue cron
+
+# Publishes due Facebook posts (lib/fbqueue.ts) by hitting the app's cron
+# endpoint. Facebook's own native scheduler is no longer used for new
+# posts — it silently throttles once a Page has ~30 pending scheduled
+# posts — so this is the only thing that publishes queued FB posts when
+# the in-process worker (instrumentation.ts) isn't running continuously.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   APP_URL      e.g. https://scheduler.awajet.com  (no trailing slash)
+#   CRON_SECRET  must match CRON_SECRET in the app's env
+#   (same secrets already used by ig-cron.yml — nothing new to add if
+#   that workflow is already configured)
+#
+# Can also be triggered manually from the Actions tab (workflow_dispatch).
+
+on:
+  schedule:
+    # Every 5 minutes — GitHub's practical minimum. Actual runs are
+    # best-effort and often land 3–15 minutes late under load.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  publish-due:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Publish due Facebook posts
+        run: |
+          set -e
+          resp=$(curl -fsS --max-time 480 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/fb")
+          echo "Response: $resp"
