@@ -1,0 +1,44 @@
+name: Organic stats cron
+
+# Nightly Meta -> Appwrite organic-stats sync (lib/organicStats.ts), for
+# the portal app's Overview/Organic Insights pages — pre-aggregates Page
+# + IG Insights into organic_stats_daily so those pages stop making live
+# Graph calls on every load. Runs once daily; the route itself re-covers
+# the trailing 3 days each time to self-heal any late Meta corrections.
+#
+# Required repo secrets (Settings -> Secrets and variables -> Actions):
+#   APP_URL      e.g. https://scheduler.awajet.com  (no trailing slash)
+#   CRON_SECRET  must match CRON_SECRET in the app's env
+#   (same secrets already used by fb-cron.yml / ig-cron.yml)
+#
+# Can also be triggered manually from the Actions tab (workflow_dispatch),
+# including with a custom "days" backfill window.
+
+on:
+  schedule:
+    # 00:00 UTC daily.
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Days back to sync (e.g. 90 for a one-time backfill)"
+        required: false
+        default: ""
+
+jobs:
+  sync-organic-stats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sync organic stats
+        run: |
+          set -e
+          days="${{ github.event.inputs.days }}"
+          url="${{ secrets.APP_URL }}/api/cron/organic-stats"
+          if [ -n "$days" ]; then
+            url="${url}?days=${days}"
+          fi
+          resp=$(curl -fsS --max-time 480 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "$url")
+          echo "Response: $resp"

@@ -40,3 +40,12 @@ export async function getCompanyByPin(pin: string): Promise<Company | null> {
   ]);
   return (res.documents[0] as unknown as Company) ?? null;
 }
+
+/** Every active company with a page this scheduler manages — the sync scope for organic stats. */
+export async function getCompanies(): Promise<Company[]> {
+  const res = await db().listDocuments(env.appwriteDatabaseId(), COMPANIES, [
+    Query.equal("active", true),
+    Query.limit(100),
+  ]);
+  return res.documents as unknown as Company[];
+}

@@ -102,9 +102,12 @@ design:
    queue (`.github/workflows/li-cron.yml` → `/api/cron/li`) — Facebook's
    own scheduler is no longer used for new posts at all (see "How
    Facebook scheduling works" above), so `fb-cron.yml` is just as load-
-   bearing as `ig-cron.yml`, not a nice-to-have.
+   bearing as `ig-cron.yml`, not a nice-to-have. A fourth workflow,
+   `organic-stats-cron.yml` → `/api/cron/organic-stats`, runs once daily
+   rather than every 5 minutes — see "How organic-stats sync works"
+   below.
 
-   All three workflows read the same two repo secrets (Settings →
+   All four workflows read the same two repo secrets (Settings →
    Secrets and variables → Actions):
    - `APP_URL` — e.g. `https://scheduler.awajet.com` (no trailing slash)
    - `CRON_SECRET` — must match `CRON_SECRET` in the app's env
@@ -117,7 +120,8 @@ design:
    the 2,000 free minutes; use a public repo, widen the interval (e.g.
    `*/15`), or an external pinger like cron-job.org. GitHub also
    auto-disables schedules in repos with no activity for 60 days —
-   re-enable from the Actions tab.
+   re-enable from the Actions tab. (The daily organic-stats schedule
+   barely registers against this budget — one run/day either way.)
 
    ⚠️ If neither the app nor a cron is running at the scheduled time,
    the post publishes on next startup — for any of the three queues,
@@ -171,6 +175,44 @@ Reel specs: MP4/MOV, 3s–15min, 9:16 recommended.
    ```bash
    node scripts/setup-ig-db.mjs
    ```
+
+## How organic-stats sync works
+
+The client portal's Overview/Insights pages used to call Page + IG
+Insights live, on every page load — several slow Graph round-trips per
+request. `lib/organicStats.ts` pre-computes those numbers once a day
+instead: for each active company with a page here, it fetches Page +
+IG Insights for a trailing window in one shot per metric (the Insights
+API returns one point per day for a since/until range) and upserts one
+row per (company, date) into `organic_stats_daily` — same Appwrite
+database the portal reads from.
+
+Deliberately **stats only**: post lists (`listPublishedPosts`,
+`listIgMedia`) are fetched here too, but only to derive daily *counts*
+(posts published, summed IG engagement — Instagram has no daily
+engagement metric) — nothing content-shaped (captions, images,
+permalinks) is ever written to `organic_stats_daily`. Content sections
+(recently published, top performing, upcoming) are unaffected and still
+read live from Meta on the portal side.
+
+Runs via `GET /api/cron/organic-stats`, driven by
+`.github/workflows/organic-stats-cron.yml` — once daily at 00:00 UTC
+(see "How Instagram publishing works" above for the shared repo
+secrets). Each run re-covers the trailing 3 days, not just "today":
+Meta can revise a day's Insights numbers for up to ~48h after it ends,
+so re-upserting the last few days every night self-heals late
+corrections instead of locking in an under-counted first read.
+
+- `GET /api/cron/organic-stats?days=90` — override the lookback window,
+  e.g. for a one-time historical backfill. Trigger manually from the
+  Actions tab (`workflow_dispatch`, "days" input) or with `curl`.
+- `GET /api/cron/organic-stats?company=<id>` — sync one company only.
+
+Fan/follower/media *counts* (as opposed to daily follow/unfollow
+*deltas*, which are a proper Meta daily metric) are point-in-time
+snapshots, not historical — the sync only stamps them onto the most
+recent date in whatever window it's covering, so backfilled/historical
+days are left null rather than guessing a past value.
 
 ## Setup (recommended: system user, never expires)
 
@@ -291,6 +333,7 @@ app/
   api/cron/fb/              Serverless-friendly Facebook queue publisher
   api/cron/ig/              Serverless-friendly Instagram queue publisher
   api/cron/li/              Serverless-friendly LinkedIn queue publisher
+  api/cron/organic-stats/   Nightly Meta -> Appwrite organic-stats sync
   actions.ts                Server actions (create, cancel, reschedule, publish)
   login/                    Shared-password login (same scheme as awaj-leads)
 components/                 Sidebar, MobileNav, Composer, RescheduleForm
@@ -299,6 +342,8 @@ lib/
   fbqueue.ts          Facebook scheduling queue (mirrors igqueue.ts)
   instagram.ts        IG Graph API client (containers, publish)
   igqueue.ts          Instagram scheduling queue
+  insights.ts         Page + IG Insights Graph API client
+  organicStats.ts     Nightly organic-stats sync (writes organic_stats_daily)
   linkedin.ts         LinkedIn posting/media client (SCAFFOLD — see above)
   linkedinOAuth.ts    LinkedIn OAuth2 (authorize URL, token exchange/refresh)
   linkedinOrgs.ts     Connected-organization store (Appwrite) + token refresh

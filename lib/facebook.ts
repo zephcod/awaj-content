@@ -277,7 +277,8 @@ export async function listScheduledPosts(
 }
 
 export async function listPublishedPosts(
-  page: PageAuth
+  page: PageAuth,
+  limit = 25
 ): Promise<PublishedPost[]> {
   const res = await graph<{ data: PublishedPost[] }>(
     page.token,
@@ -288,7 +289,7 @@ export async function listPublishedPosts(
           "id,message,created_time,permalink_url,full_picture," +
           "reactions.summary(total_count).limit(0)," +
           "comments.summary(total_count).limit(0),shares",
-        limit: "25",
+        limit: String(limit),
       },
     }
   );
