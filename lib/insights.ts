@@ -101,6 +101,42 @@ export async function igMetricSeries(
   }
 }
 
+/**
+ * Some IG insights metrics (e.g. "profile_views") were migrated by Meta
+ * to require `metric_type=total_value` — the response is a single
+ * aggregate for the whole [since, until) window (`total_value.value`),
+ * not a per-day `values` array like `fbMetricSeries`/`igMetricSeries`
+ * return. Call once per day (since = day start, until = next day start)
+ * to reconstruct a daily series for these metrics.
+ */
+export async function igTotalValueMetric(
+  page: PageAuth,
+  igUserId: string,
+  metric: string,
+  since: number,
+  until: number
+): Promise<number | null> {
+  try {
+    const res = await graph<{ data?: { total_value?: { value?: number } }[] }>(
+      page.token,
+      `${igUserId}/insights`,
+      {
+        params: {
+          metric,
+          period: "day",
+          metric_type: "total_value",
+          since: String(since),
+          until: String(until),
+        },
+      }
+    );
+    const value = res.data?.[0]?.total_value?.value;
+    return typeof value === "number" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export type IgAccountStats = {
   followers_count?: number;
   media_count?: number;

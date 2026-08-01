@@ -214,6 +214,31 @@ snapshots, not historical — the sync only stamps them onto the most
 recent date in whatever window it's covering, so backfilled/historical
 days are left null rather than guessing a past value.
 
+Two IG Insights quirks this module works around, both discovered the
+hard way (a 90-day backfill silently zeroed out weeks of already-good
+`igReach`/`igProfileViews`/`igFollowerAdds` data before these fixes):
+
+- **30-day range cap**: unlike Page Insights, `{ig-id}/insights` rejects
+  any `since`/`until` span over 30 days ("There cannot be more than 30
+  days between since and until"). Wide backfills chunk `reach` and
+  `follower_count` into ≤30-day windows (`igRangedMetricByDate`) and
+  merge the results.
+- **`profile_views` needs `metric_type=total_value`**: Meta migrated
+  this metric off the old `values`-array-per-day shape; the API now
+  errors without the param, and *with* it, one call returns a single
+  total for the whole window rather than a daily breakdown. Fetched one
+  day at a time (`igTotalValueMetric`, since = day start, until = day
+  end) to keep a real daily series instead of losing per-day detail.
+
+More generally: every field is written **only when its source actually
+resolved for that specific date this run** — a day missing from a
+Map is left out of the Appwrite payload entirely (not defaulted to
+`0`), which `upsertDay` then leaves untouched on an existing document.
+This is what makes the "self-heals late Meta corrections" claim above
+actually true instead of a liability: before this, any transient
+failure (a rate limit, the `profile_views` error above, whatever) wrote
+real `0`s over already-correct historical data on every re-sync.
+
 ## Setup (recommended: system user, never expires)
 
 1. In [Business Manager](https://business.facebook.com) →

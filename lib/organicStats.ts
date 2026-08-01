@@ -28,7 +28,12 @@ import { getCompanies, type Company } from "./clients";
 import { listPages, type ManagedPage } from "./pages";
 import { listPublishedPosts, type PublishedPost } from "./facebook";
 import { getIgAccount, listIgMedia, type IgMedia } from "./instagram";
-import { fbMetricSeries, igMetricSeries, igAccountStats } from "./insights";
+import { fbMetricSeries, igAccountStats, igMetricSeries, igTotalValueMetric } from "./insights";
+
+// IG Insights (unlike Page Insights) hard-rejects a since/until span over
+// 30 days ("There cannot be more than 30 days between since and until") —
+// wide backfills must be split into <=30-day chunks and merged.
+const IG_INSIGHTS_MAX_RANGE_DAYS = 30;
 
 export const ORGANIC_STATS_COLLECTION = "organic_stats_daily";
 
@@ -64,16 +69,70 @@ function datesInRange(sinceISO: string, untilISO: string): string[] {
   return out;
 }
 
+function chunkDateRanges(
+  sinceISO: string,
+  untilISO: string,
+  maxDays: number
+): { since: string; until: string }[] {
+  const chunks: { since: string; until: string }[] = [];
+  let curStart = new Date(`${sinceISO}T00:00:00Z`);
+  const end = new Date(`${untilISO}T00:00:00Z`);
+  while (curStart <= end) {
+    const curEnd = new Date(curStart);
+    curEnd.setUTCDate(curEnd.getUTCDate() + maxDays - 1);
+    const chunkEnd = curEnd > end ? end : curEnd;
+    chunks.push({ since: dateStr(curStart), until: dateStr(chunkEnd) });
+    curStart = new Date(chunkEnd);
+    curStart.setUTCDate(curStart.getUTCDate() + 1);
+  }
+  return chunks;
+}
+
+/**
+ * A ranged IG Insights metric (reach, follower_count), chunked to stay
+ * under Meta's 30-day span limit. Each chunk's success/failure is
+ * independent — a failed chunk simply contributes no dates to the
+ * result rather than blanking dates from chunks that did succeed.
+ */
+async function igRangedMetricByDate(
+  page: ManagedPage,
+  igUserId: string,
+  metric: string,
+  title: string,
+  sinceISO: string,
+  untilISO: string
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const chunks = chunkDateRanges(sinceISO, untilISO, IG_INSIGHTS_MAX_RANGE_DAYS);
+  await Promise.all(
+    chunks.map(async (c) => {
+      const since = Math.floor(new Date(`${c.since}T00:00:00Z`).getTime() / 1000);
+      const until = Math.floor(new Date(`${c.until}T23:59:59Z`).getTime() / 1000);
+      const series = await igMetricSeries(page, igUserId, metric, title, since, until);
+      if (series) for (const p of series.points) map.set(p.date, p.value);
+    })
+  );
+  return map;
+}
+
 const fbEngagementOf = (p: PublishedPost) =>
   (p.reactions?.summary?.total_count ?? 0) +
   (p.comments?.summary?.total_count ?? 0) +
   (p.shares?.count ?? 0);
 const igEngagementOf = (m: IgMedia) => (m.like_count ?? 0) + (m.comments_count ?? 0);
 
-/** Index a metric series' daily points by date for quick lookup while building rows. */
-function byDate(points: { date: string; value: number }[] | undefined): Map<string, number> {
+/**
+ * Index a metric series' daily points by date. An empty map (from a
+ * failed/unavailable call, or a date the series just doesn't cover) is
+ * indistinguishable from "no data" by design — callers must check
+ * `.has(date)` per date, not truthiness of the whole map, before
+ * writing: a failed call must never overwrite a day's already-good
+ * value with a false "0" for dates it didn't actually resolve.
+ */
+function byDate(series: { points: { date: string; value: number }[] } | null): Map<string, number> {
   const map = new Map<string, number>();
-  for (const p of points ?? []) map.set(p.date, p.value);
+  if (!series) return map;
+  for (const p of series.points) map.set(p.date, p.value);
   return map;
 }
 
@@ -126,20 +185,24 @@ export async function syncCompanyOrganicStats(
     const dates = datesInRange(sinceISO, untilISO);
     const lastDate = dates[dates.length - 1];
 
+    let postsOk = true;
     const [fbViews, fbEng, fbFollows, fbUnfollows, fbVideo, posts] = await Promise.all([
       fbMetricSeries(page, "page_views_total", "Page views", since, until),
       fbMetricSeries(page, "page_post_engagements", "Engagement", since, until),
       fbMetricSeries(page, "page_daily_follows_unique", "Follows", since, until),
       fbMetricSeries(page, "page_daily_unfollows_unique", "Unfollows", since, until),
       fbMetricSeries(page, "page_video_views", "Video views", since, until),
-      listPublishedPosts(page, POST_LOOKBACK_LIMIT).catch(() => [] as PublishedPost[]),
+      listPublishedPosts(page, POST_LOOKBACK_LIMIT).catch(() => {
+        postsOk = false;
+        return [] as PublishedPost[];
+      }),
     ]);
 
-    const fbViewsByDate = byDate(fbViews?.points);
-    const fbEngByDate = byDate(fbEng?.points);
-    const fbFollowsByDate = byDate(fbFollows?.points);
-    const fbUnfollowsByDate = byDate(fbUnfollows?.points);
-    const fbVideoByDate = byDate(fbVideo?.points);
+    const fbViewsByDate = byDate(fbViews);
+    const fbEngByDate = byDate(fbEng);
+    const fbFollowsByDate = byDate(fbFollows);
+    const fbUnfollowsByDate = byDate(fbUnfollows);
+    const fbVideoByDate = byDate(fbVideo);
     const fbPostsByDate = new Map<string, PublishedPost[]>();
     for (const p of posts) {
       const d = p.created_time?.slice(0, 10);
@@ -148,7 +211,8 @@ export async function syncCompanyOrganicStats(
     }
 
     let igConnected = false;
-    let igViewsByDate = new Map<string, number>();
+    let igMediaOk = true;
+    let igProfileViewsByDate = new Map<string, number>();
     let igReachByDate = new Map<string, number>();
     let igFollowerAddsByDate = new Map<string, number>();
     let igMediaByDate = new Map<string, IgMedia[]>();
@@ -159,16 +223,36 @@ export async function syncCompanyOrganicStats(
       const ig = await getIgAccount(page);
       if (ig) {
         igConnected = true;
-        const [views, reach, followerAdds, stats, media] = await Promise.all([
-          igMetricSeries(page, ig.id, "profile_views", "Profile views", since, until),
-          igMetricSeries(page, ig.id, "reach", "Reach", since, until),
-          igMetricSeries(page, ig.id, "follower_count", "Follower adds", since, until),
+        // "profile_views" was migrated by Meta to require
+        // metric_type=total_value, which only returns one aggregate per
+        // call (no per-day values array) — fetch it one day at a time to
+        // keep a daily series. "reach"/"follower_count" still support
+        // ranged calls, but IG Insights caps since/until at 30 days, so
+        // wide backfills go through the chunked helper.
+        const [profileViewsDays, reachMap, followerAddsMap, stats, media] = await Promise.all([
+          Promise.all(
+            dates.map(async (d) => {
+              const dayStart = Math.floor(new Date(`${d}T00:00:00Z`).getTime() / 1000);
+              const dayEnd = Math.floor(new Date(`${d}T23:59:59Z`).getTime() / 1000);
+              const value = await igTotalValueMetric(page, ig.id, "profile_views", dayStart, dayEnd);
+              return { date: d, value };
+            })
+          ),
+          igRangedMetricByDate(page, ig.id, "reach", "Reach", sinceISO, untilISO),
+          igRangedMetricByDate(page, ig.id, "follower_count", "Follower adds", sinceISO, untilISO),
           igAccountStats(page, ig.id),
-          listIgMedia(page, ig.id, POST_LOOKBACK_LIMIT).catch(() => [] as IgMedia[]),
+          listIgMedia(page, ig.id, POST_LOOKBACK_LIMIT).catch(() => {
+            igMediaOk = false;
+            return [] as IgMedia[];
+          }),
         ]);
-        igViewsByDate = byDate(views?.points);
-        igReachByDate = byDate(reach?.points);
-        igFollowerAddsByDate = byDate(followerAdds?.points);
+        // Only include days that actually resolved a value — a single
+        // day's transient failure shouldn't blank the whole window.
+        for (const d of profileViewsDays) {
+          if (d.value !== null) igProfileViewsByDate.set(d.date, d.value);
+        }
+        igReachByDate = reachMap;
+        igFollowerAddsByDate = followerAddsMap;
         igFollowersCount = stats?.followers_count ?? null;
         igMediaCount = stats?.media_count ?? null;
         for (const m of media) {
@@ -186,26 +270,40 @@ export async function syncCompanyOrganicStats(
       const igPostsThatDay = igMediaByDate.get(date) ?? [];
       const igEngagementThatDay = igPostsThatDay.reduce((n, m) => n + igEngagementOf(m), 0);
 
-      await upsertDay(company.$id, date, {
-        fbPageViews: fbViewsByDate.get(date) ?? 0,
-        fbEngagement: fbEngByDate.get(date) ?? 0,
-        fbFollows: fbFollowsByDate.get(date) ?? 0,
-        fbUnfollows: fbUnfollowsByDate.get(date) ?? 0,
-        fbVideoViews: fbVideoByDate.get(date) ?? 0,
-        // Fan/follower/media counts are point-in-time snapshots, not daily
-        // deltas — only meaningful as of "now", so only stamped on the
-        // most recent date in this window; earlier (backfilled) days are
-        // left null rather than guessing a historical value.
-        fbFanCount: date === lastDate ? (page.fanCount ?? null) : undefined,
+      // Every field below is written only when its source actually
+      // resolved for this run — `undefined` is dropped from the Appwrite
+      // payload, leaving whatever was already stored untouched, instead
+      // of a transient failure permanently overwriting a good value
+      // with a false "0" (this is exactly what happened before this
+      // fix: a rate-limited/failed IG Insights call zeroed out days that
+      // had already synced correctly).
+      const fields: Record<string, unknown> = {
         igConnected,
-        igProfileViews: igViewsByDate.get(date) ?? 0,
-        igReach: igReachByDate.get(date) ?? 0,
-        igEngagement: igEngagementThatDay,
-        igFollowerAdds: igFollowerAddsByDate.get(date) ?? 0,
+        // Fan/follower/media counts are point-in-time snapshots, not
+        // daily deltas — only meaningful as of "now", so only stamped on
+        // the most recent date in this window; earlier (backfilled)
+        // days are left null rather than guessing a historical value.
+        fbFanCount: date === lastDate ? (page.fanCount ?? null) : undefined,
         igFollowersCount: date === lastDate ? igFollowersCount : undefined,
         igMediaCount: date === lastDate ? igMediaCount : undefined,
-        postsPublishedCount: fbPostsThatDay.length + igPostsThatDay.length,
-      });
+      };
+      // .has(date), not truthiness of the whole map — an entirely failed
+      // call leaves an empty-but-real Map, which must skip every date,
+      // not silently write 0 everywhere.
+      if (fbViewsByDate.has(date)) fields.fbPageViews = fbViewsByDate.get(date);
+      if (fbEngByDate.has(date)) fields.fbEngagement = fbEngByDate.get(date);
+      if (fbFollowsByDate.has(date)) fields.fbFollows = fbFollowsByDate.get(date);
+      if (fbUnfollowsByDate.has(date)) fields.fbUnfollows = fbUnfollowsByDate.get(date);
+      if (fbVideoByDate.has(date)) fields.fbVideoViews = fbVideoByDate.get(date);
+      if (igProfileViewsByDate.has(date)) fields.igProfileViews = igProfileViewsByDate.get(date);
+      if (igReachByDate.has(date)) fields.igReach = igReachByDate.get(date);
+      if (igFollowerAddsByDate.has(date)) fields.igFollowerAdds = igFollowerAddsByDate.get(date);
+      if (igMediaOk) fields.igEngagement = igEngagementThatDay;
+      if (postsOk && (!igConnected || igMediaOk)) {
+        fields.postsPublishedCount = fbPostsThatDay.length + igPostsThatDay.length;
+      }
+
+      await upsertDay(company.$id, date, fields);
       result.days++;
     }
   } catch (e) {
