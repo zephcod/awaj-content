@@ -73,6 +73,19 @@ export function validateScheduleTime(unixSeconds: number): string | null {
 
 // ── Low-level fetch helper ────────────────────────────────────────
 
+/**
+ * Default request timeout for Graph API calls. Without this, a hung
+ * request has no client-side cutoff — the hosting platform's own
+ * execution-time limit becomes the only thing that can kill it, and
+ * that kill happens abruptly (no catch block runs), leaving a queue
+ * item permanently stuck at status "publishing" with no error ever
+ * recorded. This is what caused a scheduled Instagram post to silently
+ * never publish and never get retried — see lib/igqueue.ts's
+ * processDueIgPosts() for the other half of that fix (reclaiming
+ * items stuck in "publishing" past a grace period).
+ */
+const GRAPH_TIMEOUT_MS = 30_000;
+
 export async function graph<T>(
   token: string,
   path: string,
@@ -97,11 +110,24 @@ export async function graph<T>(
     url.searchParams.set("access_token", token);
   }
 
-  const res = await fetch(url, {
-    method: init.method ?? "GET",
-    body,
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: init.method ?? "GET",
+      body,
+      cache: "no-store",
+      signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+    });
+  } catch (e) {
+    if (e instanceof Error && e.name === "TimeoutError") {
+      throw new GraphError(
+        `Graph API request to ${path} timed out after ${GRAPH_TIMEOUT_MS / 1000}s.`
+      );
+    }
+    throw new GraphError(
+      `Graph API request to ${path} failed: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
 
   const json = (await res.json().catch(() => null)) as {
     error?: { message?: string; code?: number };
@@ -242,7 +268,25 @@ export async function createVideoPost(
     form.set("published", "false");
     form.set("scheduled_publish_time", String(opts.scheduledAt));
   }
-  const res = await fetch(url, { method: "POST", body: form });
+  let res: Response;
+  try {
+    // Longer ceiling than GRAPH_TIMEOUT_MS — this is an actual file
+    // upload (up to ~1 GB), not a metadata call, so it legitimately
+    // needs more time. Still bounded, so a hung upload fails instead
+    // of leaving the caller (lib/fbqueue.ts) stuck forever.
+    res = await fetch(url, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(5 * 60_000),
+    });
+  } catch (e) {
+    if (e instanceof Error && e.name === "TimeoutError") {
+      throw new GraphError("Video upload timed out after 5 minutes.");
+    }
+    throw new GraphError(
+      `Video upload failed: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
   const json = (await res.json().catch(() => null)) as {
     id?: string;
     error?: { message?: string; code?: number };

@@ -39,6 +39,18 @@ export class LinkedInApiError extends Error {
   }
 }
 
+/**
+ * Without a timeout, a hung request has no client-side cutoff — the
+ * hosting platform's own execution-time limit becomes the only thing
+ * that can kill it, abruptly, with no catch block ever running to
+ * record a failure. That's what left a scheduled Instagram post stuck
+ * forever (see lib/facebook.ts's graph() for the fuller writeup); the
+ * same gap existed here. Binary uploads get a longer ceiling since
+ * they're actual file transfers, not metadata calls.
+ */
+const LI_TIMEOUT_MS = 30_000;
+const LI_UPLOAD_TIMEOUT_MS = 5 * 60_000;
+
 async function li<T>(
   auth: LiAuth,
   path: string,
@@ -67,7 +79,23 @@ async function li<T>(
     if (init.body !== undefined) body = JSON.stringify(init.body);
   }
 
-  const res = await fetch(url, { method: init.method ?? "GET", headers, body, cache: "no-store" });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: init.method ?? "GET",
+      headers,
+      body,
+      cache: "no-store",
+      signal: AbortSignal.timeout(init.binary ? LI_UPLOAD_TIMEOUT_MS : LI_TIMEOUT_MS),
+    });
+  } catch (e) {
+    if (e instanceof Error && e.name === "TimeoutError") {
+      throw new LinkedInApiError(`LinkedIn request to ${path} timed out.`);
+    }
+    throw new LinkedInApiError(
+      `LinkedIn request to ${path} failed: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
 
   if (init.binary) {
     // Upload PUTs return 201 with no useful body.

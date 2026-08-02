@@ -16,15 +16,21 @@ import {
 import { fbQueueConfigured, igQueueConfigured, liQueueConfigured } from "@/lib/env";
 import {
   deleteFbItem,
+  editFbItem,
   enqueueFbPost,
+  type FbQueueItem,
   publishFbItemNow,
   rescheduleFbItem,
+  setFbItemStatus,
 } from "@/lib/fbqueue";
 import {
   deleteIgItem,
+  editIgItem,
   enqueueIgPost,
+  type IgQueueItem,
   publishIgItemNow,
   rescheduleIgItem,
+  setIgItemStatus,
 } from "@/lib/igqueue";
 import {
   getIgAccount,
@@ -42,9 +48,12 @@ import {
 } from "@/lib/linkedin";
 import {
   deleteLiItem,
+  editLiItem,
   enqueueLiPost,
+  type LiQueueItem,
   publishLiItemNow,
   rescheduleLiItem,
+  setLiItemStatus,
 } from "@/lib/liqueue";
 import {
   ACTIVE_LI_ORG_COOKIE,
@@ -53,7 +62,15 @@ import {
   getValidAccessToken,
 } from "@/lib/linkedinOrgs";
 import { ACTIVE_PAGE_COOKIE, getActivePage } from "@/lib/pages";
-import { deleteIgMedia, mediaUrl, uploadFbMedia, uploadIgMedia, uploadLiMedia } from "@/lib/storage";
+import {
+  deleteFbMedia,
+  deleteIgMedia,
+  deleteLiMedia,
+  mediaUrl,
+  uploadFbMedia,
+  uploadIgMedia,
+  uploadLiMedia,
+} from "@/lib/storage";
 
 export type ActionState = {
   ok: boolean;
@@ -66,6 +83,9 @@ function errMessage(e: unknown): string {
   if (e instanceof Error) return e.message;
   return "Something went wrong.";
 }
+
+/** Valid values for the manual status dropdown on /scheduled — same shape across all three queues. */
+const QUEUE_STATUSES = ["pending", "approved", "publishing", "failed", "published"] as const;
 
 /** Switch the LinkedIn organization Composer posts to. */
 export async function setActiveLiOrg(orgUrn: string): Promise<void> {
@@ -529,6 +549,72 @@ export async function rescheduleFbQueued(
   return { ok: true, message: "Post rescheduled." };
 }
 
+/**
+ * Manual status override for the /scheduled dropdown — e.g. resetting a
+ * stuck "publishing" item to "pending" instead of waiting for the
+ * 45-min auto-reclaim. Does not touch staged media or trigger a real
+ * publish attempt, so switching to "published" here doesn't actually
+ * post anything — it just tells the queue to stop touching this item.
+ */
+export async function setFbQueueStatus(formData: FormData): Promise<void> {
+  const id = String(formData.get("id") ?? "");
+  const status = String(formData.get("status") ?? "") as FbQueueItem["status"];
+  if (!id || !QUEUE_STATUSES.includes(status)) return;
+  try {
+    await setFbItemStatus(id, status);
+  } catch {
+    // refresh shows current state
+  }
+  revalidatePath("/scheduled");
+}
+
+/**
+ * Edit a queued Facebook post's caption and/or media (/scheduled UI's
+ * "Edit" panel, replacing the old "Publish now" button). Fields:
+ * id, caption, oldMediaRefs (JSON array, for cleanup), mediaType
+ * (original, so the right family gets recomputed on replace), media
+ * (File[], optional — omit to keep the current media untouched).
+ */
+export async function editFbQueued(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { ok: false, message: "Missing item id." };
+  const caption = String(formData.get("caption") ?? "").trim();
+  const originalMediaType = String(formData.get("mediaType") ?? "");
+  let oldRefs: string[] = [];
+  try {
+    oldRefs = JSON.parse(String(formData.get("oldMediaRefs") ?? "[]"));
+  } catch {
+    oldRefs = [];
+  }
+  const files = formData
+    .getAll("media")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+
+  try {
+    const updates: Parameters<typeof editFbItem>[1] = { caption };
+    if (files.length > 0) {
+      const newRefs: string[] = [];
+      for (const f of files) newRefs.push(await uploadFbMedia(f));
+      updates.mediaRefs = newRefs;
+      updates.mediaContentType = files[0].type;
+      if (originalMediaType === "image" || originalMediaType === "multiImage") {
+        updates.mediaType = newRefs.length > 1 ? "multiImage" : "image";
+      }
+      await editFbItem(id, updates);
+      for (const ref of oldRefs) await deleteFbMedia(ref);
+    } else {
+      await editFbItem(id, updates);
+    }
+  } catch (e) {
+    return { ok: false, message: errMessage(e) };
+  }
+  revalidatePath("/scheduled");
+  return { ok: true, message: "Post updated." };
+}
+
 // ── Instagram queue management ────────────────────────────────────
 
 export async function cancelIgQueued(formData: FormData): Promise<void> {
@@ -574,6 +660,65 @@ export async function rescheduleIg(
   return { ok: true, message: "Post rescheduled." };
 }
 
+/** Manual status override for the /scheduled dropdown — see setFbQueueStatus. */
+export async function setIgQueueStatus(formData: FormData): Promise<void> {
+  const id = String(formData.get("id") ?? "");
+  const status = String(formData.get("status") ?? "") as IgQueueItem["status"];
+  if (!id || !QUEUE_STATUSES.includes(status)) return;
+  try {
+    await setIgItemStatus(id, status);
+  } catch {
+    // refresh shows current state
+  }
+  revalidatePath("/scheduled");
+}
+
+/**
+ * Edit a queued Instagram post's caption and/or media (/scheduled UI's
+ * "Edit" panel, replacing the old "Publish now" button). Same fields
+ * as editFbQueued. Caption is silently ignored for storyImage/
+ * storyVideo items on the next publish — Stories don't take one via
+ * the API — but is still saved here for consistency/future use.
+ */
+export async function editIgQueued(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { ok: false, message: "Missing item id." };
+  const caption = String(formData.get("caption") ?? "").trim();
+  const originalMediaType = String(formData.get("mediaType") ?? "");
+  let oldRefs: string[] = [];
+  try {
+    oldRefs = JSON.parse(String(formData.get("oldMediaRefs") ?? "[]"));
+  } catch {
+    oldRefs = [];
+  }
+  const files = formData
+    .getAll("media")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+
+  try {
+    const updates: Parameters<typeof editIgItem>[1] = { caption };
+    if (files.length > 0) {
+      const newRefs: string[] = [];
+      for (const f of files) newRefs.push(await uploadIgMedia(f));
+      updates.mediaRefs = newRefs;
+      if (originalMediaType === "image" || originalMediaType === "carousel") {
+        updates.mediaType = newRefs.length > 1 ? "carousel" : "image";
+      }
+      await editIgItem(id, updates);
+      for (const ref of oldRefs) await deleteIgMedia(ref);
+    } else {
+      await editIgItem(id, updates);
+    }
+  } catch (e) {
+    return { ok: false, message: errMessage(e) };
+  }
+  revalidatePath("/scheduled");
+  return { ok: true, message: "Post updated." };
+}
+
 // ── LinkedIn queue management ─────────────────────────────────────
 
 export async function cancelLiQueued(formData: FormData): Promise<void> {
@@ -617,6 +762,64 @@ export async function rescheduleLi(
   }
   revalidatePath("/scheduled");
   return { ok: true, message: "Post rescheduled." };
+}
+
+/** Manual status override for the /scheduled dropdown — see setFbQueueStatus. */
+export async function setLiQueueStatus(formData: FormData): Promise<void> {
+  const id = String(formData.get("id") ?? "");
+  const status = String(formData.get("status") ?? "") as LiQueueItem["status"];
+  if (!id || !QUEUE_STATUSES.includes(status)) return;
+  try {
+    await setLiItemStatus(id, status);
+  } catch {
+    // refresh shows current state
+  }
+  revalidatePath("/scheduled");
+}
+
+/**
+ * Edit a queued LinkedIn post's caption and/or media (/scheduled UI's
+ * "Edit" panel, replacing the old "Publish now" button). Same fields
+ * as editFbQueued.
+ */
+export async function editLiQueued(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { ok: false, message: "Missing item id." };
+  const caption = String(formData.get("caption") ?? "").trim();
+  const originalMediaType = String(formData.get("mediaType") ?? "");
+  let oldRefs: string[] = [];
+  try {
+    oldRefs = JSON.parse(String(formData.get("oldMediaRefs") ?? "[]"));
+  } catch {
+    oldRefs = [];
+  }
+  const files = formData
+    .getAll("media")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+
+  try {
+    const updates: Parameters<typeof editLiItem>[1] = { caption };
+    if (files.length > 0) {
+      const newRefs: string[] = [];
+      for (const f of files) newRefs.push(await uploadLiMedia(f));
+      updates.mediaRefs = newRefs;
+      updates.mediaContentType = files[0].type;
+      if (originalMediaType === "image" || originalMediaType === "multiImage") {
+        updates.mediaType = newRefs.length > 1 ? "multiImage" : "image";
+      }
+      await editLiItem(id, updates);
+      for (const ref of oldRefs) await deleteLiMedia(ref);
+    } else {
+      await editLiItem(id, updates);
+    }
+  } catch (e) {
+    return { ok: false, message: errMessage(e) };
+  }
+  revalidatePath("/scheduled");
+  return { ok: true, message: "Post updated." };
 }
 
 export async function cancelScheduled(formData: FormData): Promise<void> {

@@ -48,7 +48,7 @@ export type IgQueueItem = {
   /** Appwrite file id of a custom Reel cover image, if one was provided. */
   thumbRef?: string;
   scheduledAt: number; // unix seconds
-  status: "pending" | "publishing" | "published" | "failed";
+  status: "pending" | "approved" | "publishing" | "published" | "failed";
   error?: string;
   igMediaId?: string;
 };
@@ -111,6 +111,47 @@ export async function rescheduleIgItem(
     status: "pending",
     error: null,
   });
+}
+
+/**
+ * Edit a queued post's caption and/or media before it publishes.
+ * Always resets status to "pending" (and clears any error), so an
+ * edited item — including one that previously failed — becomes
+ * eligible to publish again on the next due-post pass. Doesn't delete
+ * old staged media itself; callers that replace mediaRefs own cleaning
+ * up the files those old refs pointed to (see app/actions.ts's
+ * editIgQueued, which deletes them only after the new refs are saved).
+ */
+export async function editIgItem(
+  id: string,
+  updates: {
+    caption?: string;
+    mediaRefs?: string[];
+    mediaType?: IgMediaType;
+  }
+): Promise<void> {
+  const patch: Record<string, unknown> = { status: "pending", error: null };
+  if (updates.caption !== undefined) patch.caption = updates.caption.slice(0, 2200);
+  if (updates.mediaRefs !== undefined) {
+    patch.mediaRefs = JSON.stringify(updates.mediaRefs);
+    patch.fbPhotoId = updates.mediaRefs[0]; // keep legacy-compat field in sync
+  }
+  if (updates.mediaType !== undefined) patch.mediaType = updates.mediaType;
+  await db().updateDocument(DB(), IG_QUEUE_COLLECTION, id, patch);
+}
+
+/**
+ * Directly set an item's status — an escape hatch for the /scheduled UI
+ * (e.g. resetting a stuck "publishing" item to "pending" without
+ * waiting for the 45-min auto-reclaim, or manually marking something
+ * "published"/"failed" when it was actually handled outside the app).
+ * Does not touch staged media or trigger a real publish attempt.
+ */
+export async function setIgItemStatus(
+  id: string,
+  status: IgQueueItem["status"]
+): Promise<void> {
+  await db().updateDocument(DB(), IG_QUEUE_COLLECTION, id, { status });
 }
 
 export async function deleteIgItem(id: string): Promise<void> {
@@ -195,21 +236,58 @@ export async function publishIgItemNow(id: string): Promise<void> {
 }
 
 /**
- * Publish everything that's due. Returns a summary. Safe to call from
- * both the in-process worker and the cron route.
+ * Items stuck at "publishing" longer than this are reclaimed and
+ * retried. A publish attempt claims an item (status → "publishing")
+ * before doing any real work; if the process running it gets killed
+ * mid-flight — e.g. the hosting platform's own execution-time limit
+ * cutting off a hung Graph API call — the item never reaches
+ * "published" or "failed" and, without this, sits invisible to every
+ * future run forever (due-post queries only ever looked at "pending").
+ * This is exactly what silently ate a scheduled Instagram post once;
+ * see lib/facebook.ts's graph() for the other half of this fix (a
+ * request timeout, so hangs fail fast instead of getting killed by
+ * the platform).
+ *
+ * Tradeoff worth knowing: if a claimed item's publish actually
+ * succeeded on Instagram but the process died before writing
+ * "published" back to Appwrite, reclaiming it will retry and post a
+ * duplicate. That's judged rarer and cheaper than a post silently
+ * never going out, but it's not risk-free — the grace period is kept
+ * generous (45 min, well past what a real publish should ever take)
+ * to keep false reclaims rare.
+ */
+const STUCK_RECLAIM_MS = 45 * 60_000;
+
+/**
+ * Publish everything that's due (plus any "publishing" items stuck
+ * past STUCK_RECLAIM_MS). Returns a summary. Safe to call from both
+ * the in-process worker and the cron route.
  */
 export async function processDueIgPosts(): Promise<{
   processed: number;
 }> {
   if (!igQueueConfigured()) return { processed: 0 };
   const now = Math.floor(Date.now() / 1000);
-  const res = await db().listDocuments(DB(), IG_QUEUE_COLLECTION, [
-    Query.equal("status", "pending"),
-    Query.lessThanEqual("scheduledAt", now),
-    Query.orderAsc("scheduledAt"),
-    Query.limit(10),
+  const staleBefore = new Date(Date.now() - STUCK_RECLAIM_MS).toISOString();
+
+  const [dueRes, stuckRes] = await Promise.all([
+    db().listDocuments(DB(), IG_QUEUE_COLLECTION, [
+      Query.equal("status", "pending"),
+      Query.lessThanEqual("scheduledAt", now),
+      Query.orderAsc("scheduledAt"),
+      Query.limit(10),
+    ]),
+    db().listDocuments(DB(), IG_QUEUE_COLLECTION, [
+      Query.equal("status", "publishing"),
+      Query.lessThan("$updatedAt", staleBefore),
+      Query.orderAsc("$updatedAt"),
+      Query.limit(10),
+    ]),
   ]);
-  const due = res.documents as unknown as IgQueueItem[];
+  const due = [
+    ...dueRes.documents,
+    ...stuckRes.documents,
+  ] as unknown as IgQueueItem[];
   for (const item of due) await publishItem(item);
   return { processed: due.length };
 }

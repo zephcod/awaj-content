@@ -5,13 +5,12 @@ import {
   cancelIgQueued,
   cancelLiQueued,
   cancelScheduled,
-  publishFbQueuedNow,
-  publishIgQueuedNow,
-  publishLiQueuedNow,
   publishScheduledNow,
 } from "@/app/actions";
 import { FacebookGlyph, InstagramGlyph, LinkedInGlyph } from "@/components/icons/BrandGlyphs";
+import EditQueuedPostForm from "@/components/EditQueuedPostForm";
 import RescheduleForm from "@/components/RescheduleForm";
+import StatusSelect from "@/components/StatusSelect";
 import { fbConfigured, fbQueueConfigured, igQueueConfigured, liQueueConfigured } from "@/lib/env";
 import { listFbQueue, type FbQueueItem } from "@/lib/fbqueue";
 import { listScheduledPosts, type ScheduledPost } from "@/lib/facebook";
@@ -177,24 +176,14 @@ export default async function ScheduledPage() {
                       <Clapperboard className="h-3 w-3" /> video
                     </span>
                   )}
-                  {item.status === "failed" && (
-                    <span className="rounded-full bg-red-50 px-2 py-0.5 font-mono text-[10px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                      failed
-                    </span>
-                  )}
-                  {item.status === "publishing" && (
-                    <span className="rounded-full bg-gold/15 px-2 py-0.5 font-mono text-[10px] text-amber">
-                      publishing…
-                    </span>
-                  )}
                 </div>
-                <div className="mt-2 flex gap-4">
+                <div className="mt-3 flex flex-col gap-3">
                   {fbThumbs[item.$id] && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={fbThumbs[item.$id]}
                       alt=""
-                      className="h-20 w-20 shrink-0 rounded-md border border-edge object-cover"
+                      className="aspect-[4/5] w-full rounded-md border border-edge object-cover"
                     />
                   )}
                   <p className="text-sm whitespace-pre-wrap">
@@ -209,18 +198,16 @@ export default async function ScheduledPage() {
                   </p>
                 )}
                 <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-edge pt-3">
+                  <StatusSelect
+                    itemId={item.$id}
+                    currentStatus={item.status}
+                    platform="fb"
+                  />
                   <RescheduleForm
                     postId={item.$id}
                     currentUnix={item.scheduledAt}
                     platform="fbq"
                   />
-                  <form action={publishFbQueuedNow}>
-                    <input type="hidden" name="id" value={item.$id} />
-                    <button className="flex items-center gap-1 font-mono text-[11px] text-muted underline hover:text-amber">
-                      <Send className="h-3 w-3" />
-                      {item.status === "failed" ? "Retry now" : "Publish now"}
-                    </button>
-                  </form>
                   <form action={cancelFbQueued}>
                     <input type="hidden" name="id" value={item.$id} />
                     <button className="flex items-center gap-1 font-mono text-[11px] text-red-600 underline hover:text-red-700">
@@ -228,6 +215,16 @@ export default async function ScheduledPage() {
                       Delete
                     </button>
                   </form>
+                  <EditQueuedPostForm
+                    itemId={item.$id}
+                    platform="fb"
+                    currentCaption={item.caption}
+                    mediaRefs={item.mediaRefs ? JSON.parse(item.mediaRefs) : []}
+                    mediaType={item.mediaType}
+                    hasMedia={item.mediaType !== "text"}
+                    allowMultiple={item.mediaType === "image" || item.mediaType === "multiImage"}
+                    accept={item.mediaType === "video" ? "video/mp4,video/quicktime" : "image/*"}
+                  />
                 </div>
               </li>
             ))}
@@ -274,24 +271,14 @@ export default async function ScheduledPage() {
                       <Clapperboard className="h-3 w-3" /> reel
                     </span>
                   )}
-                  {item.status === "failed" && (
-                    <span className="rounded-full bg-red-50 px-2 py-0.5 font-mono text-[10px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                      failed
-                    </span>
-                  )}
-                  {item.status === "publishing" && (
-                    <span className="rounded-full bg-gold/15 px-2 py-0.5 font-mono text-[10px] text-amber">
-                      publishing…
-                    </span>
-                  )}
                 </div>
-                <div className="mt-2 flex gap-4">
+                <div className="mt-3 flex flex-col gap-3">
                   {igThumbs[item.$id] && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={igThumbs[item.$id]}
                       alt=""
-                      className="h-20 w-20 shrink-0 rounded-md border border-edge object-cover"
+                      className="aspect-[4/5] w-full rounded-md border border-edge object-cover"
                     />
                   )}
                   <p className="text-sm whitespace-pre-wrap">
@@ -306,18 +293,16 @@ export default async function ScheduledPage() {
                   </p>
                 )}
                 <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-edge pt-3">
+                  <StatusSelect
+                    itemId={item.$id}
+                    currentStatus={item.status}
+                    platform="ig"
+                  />
                   <RescheduleForm
                     postId={item.$id}
                     currentUnix={item.scheduledAt}
                     platform="ig"
                   />
-                  <form action={publishIgQueuedNow}>
-                    <input type="hidden" name="id" value={item.$id} />
-                    <button className="flex items-center gap-1 font-mono text-[11px] text-muted underline hover:text-amber">
-                      <Send className="h-3 w-3" />
-                      {item.status === "failed" ? "Retry now" : "Publish now"}
-                    </button>
-                  </form>
                   <form action={cancelIgQueued}>
                     <input type="hidden" name="id" value={item.$id} />
                     <button className="flex items-center gap-1 font-mono text-[11px] text-red-600 underline hover:text-red-700">
@@ -325,6 +310,20 @@ export default async function ScheduledPage() {
                       Delete
                     </button>
                   </form>
+                  <EditQueuedPostForm
+                    itemId={item.$id}
+                    platform="ig"
+                    currentCaption={item.caption}
+                    mediaRefs={item.mediaRefs ? JSON.parse(item.mediaRefs) : []}
+                    mediaType={item.mediaType ?? "image"}
+                    hasMedia
+                    allowMultiple={item.mediaType === "image" || item.mediaType === "carousel"}
+                    accept={
+                      item.mediaType === "reel" || item.mediaType === "storyVideo"
+                        ? "video/mp4,video/quicktime"
+                        : "image/*"
+                    }
+                  />
                 </div>
               </li>
             ))}
@@ -366,18 +365,8 @@ export default async function ScheduledPage() {
                       <Clapperboard className="h-3 w-3" /> video
                     </span>
                   )}
-                  {item.status === "failed" && (
-                    <span className="rounded-full bg-red-50 px-2 py-0.5 font-mono text-[10px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                      failed
-                    </span>
-                  )}
-                  {item.status === "publishing" && (
-                    <span className="rounded-full bg-gold/15 px-2 py-0.5 font-mono text-[10px] text-amber">
-                      publishing…
-                    </span>
-                  )}
                 </div>
-                <p className="mt-2 text-sm whitespace-pre-wrap">
+                <p className="mt-3 text-sm whitespace-pre-wrap">
                   {item.caption || (
                     <span className="text-muted italic">(no caption)</span>
                   )}
@@ -388,18 +377,16 @@ export default async function ScheduledPage() {
                   </p>
                 )}
                 <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-edge pt-3">
+                  <StatusSelect
+                    itemId={item.$id}
+                    currentStatus={item.status}
+                    platform="li"
+                  />
                   <RescheduleForm
                     postId={item.$id}
                     currentUnix={item.scheduledAt}
                     platform="li"
                   />
-                  <form action={publishLiQueuedNow}>
-                    <input type="hidden" name="id" value={item.$id} />
-                    <button className="flex items-center gap-1 font-mono text-[11px] text-muted underline hover:text-amber">
-                      <Send className="h-3 w-3" />
-                      {item.status === "failed" ? "Retry now" : "Publish now"}
-                    </button>
-                  </form>
                   <form action={cancelLiQueued}>
                     <input type="hidden" name="id" value={item.$id} />
                     <button className="flex items-center gap-1 font-mono text-[11px] text-red-600 underline hover:text-red-700">
@@ -407,6 +394,16 @@ export default async function ScheduledPage() {
                       Delete
                     </button>
                   </form>
+                  <EditQueuedPostForm
+                    itemId={item.$id}
+                    platform="li"
+                    currentCaption={item.caption}
+                    mediaRefs={item.mediaRefs ? JSON.parse(item.mediaRefs) : []}
+                    mediaType={item.mediaType}
+                    hasMedia={item.mediaType !== "text"}
+                    allowMultiple={item.mediaType === "image" || item.mediaType === "multiImage"}
+                    accept={item.mediaType === "video" ? "video/*" : "image/*"}
+                  />
                 </div>
               </li>
             ))}
@@ -441,13 +438,13 @@ export default async function ScheduledPage() {
               </span>
             </div>
 
-            <div className="mt-2 flex gap-4">
+            <div className="mt-3 flex flex-col gap-3">
               {p.full_picture && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={p.full_picture}
                   alt=""
-                  className="h-20 w-20 shrink-0 rounded-md border border-edge object-cover"
+                  className="aspect-[4/5] w-full rounded-md border border-edge object-cover"
                 />
               )}
               <p className="text-sm whitespace-pre-wrap">

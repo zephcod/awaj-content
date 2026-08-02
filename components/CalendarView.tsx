@@ -2,8 +2,9 @@ import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import Link from "next/link";
 import { KIND_STYLE, PlatformIcon, fmtDayLabel, type CalEvent } from "@/components/CalendarShared";
 import { DayMorePopover } from "@/components/DayMorePopover";
-import { igQueueConfigured, liQueueConfigured } from "@/lib/env";
+import { fbQueueConfigured, igQueueConfigured, liQueueConfigured } from "@/lib/env";
 import { listPublishedPosts, listScheduledPosts } from "@/lib/facebook";
+import { listFbQueue } from "@/lib/fbqueue";
 import { listIgQueue } from "@/lib/igqueue";
 import { listLiQueue } from "@/lib/liqueue";
 import { getActiveLiOrg } from "@/lib/linkedinOrgs";
@@ -99,6 +100,29 @@ export default async function CalendarView({
           label: p.message || "(photo)",
           href: p.permalink_url,
         });
+      }
+
+      // Facebook queue (lib/fbqueue.ts) — the primary FB scheduling path
+      // now; native scheduled_posts above is legacy-only. listFbQueue
+      // already excludes "published" items, so every other status
+      // (pending, approved, publishing, failed) shows up here.
+      if (fbQueueConfigured()) {
+        for (const item of await listFbQueue(page.id)) {
+          if (readOnly && item.status === "failed") continue;
+          const d = new Date(item.scheduledAt * 1000);
+          add(eatYmd(d), {
+            time: eatTime(d),
+            platform: "fb",
+            kind:
+              item.status === "failed"
+                ? "failed"
+                : item.status === "publishing"
+                  ? "publishing"
+                  : "scheduled",
+            label: item.caption || "(post)",
+            href: readOnly ? undefined : "/scheduled",
+          });
+        }
       }
 
       // Instagram — optional, never blocks the FB calendar
