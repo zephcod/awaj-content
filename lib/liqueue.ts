@@ -233,7 +233,7 @@ export async function processDueLiPosts(): Promise<{ processed: number }> {
 
   const [dueRes, stuckRes] = await Promise.all([
     db().listDocuments(DB(), LI_QUEUE_COLLECTION, [
-      Query.equal("status", "pending"),
+      Query.equal("status", ["pending", "approved"]),
       Query.lessThanEqual("scheduledAt", now),
       Query.orderAsc("scheduledAt"),
       Query.limit(10),
