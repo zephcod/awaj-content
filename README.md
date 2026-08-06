@@ -95,7 +95,8 @@ design:
    published by:
    - an in-process worker (starts with the app, checks every 60s), and
    - `GET /api/cron/ig` for serverless deploys, driven by a GitHub
-     Actions schedule (`.github/workflows/ig-cron.yml`, every 5 min).
+     Actions schedule (`.github/workflows/ig-cron.yml`, every 5 min,
+     on the `:01` offset — see below).
 
    The exact same pattern drives the Facebook queue
    (`.github/workflows/fb-cron.yml` → `/api/cron/fb`) and the LinkedIn
@@ -106,6 +107,16 @@ design:
    `organic-stats-cron.yml` → `/api/cron/organic-stats`, runs once daily
    rather than every 5 minutes — see "How organic-stats sync works"
    below.
+
+   The three 5-minute schedules are staggered by a minute each
+   (`fb-cron.yml` on `:00`, `ig-cron.yml` on `:01`, `li-cron.yml` on
+   `:02`, all still every 5 minutes) rather than all firing on the same
+   `*/5 * * * *` mark. Running all three simultaneously was causing
+   intermittent failures where a job sat queued waiting for a shared
+   GitHub-hosted runner and got cancelled before one was ever assigned
+   (visible in the Actions run history as `cancelled` with an empty
+   step list) — not a bug in the app, just runner contention from three
+   workflows competing for one at the exact same instant.
 
    All four workflows read the same two repo secrets (Settings →
    Secrets and variables → Actions):
