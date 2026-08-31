@@ -4,7 +4,8 @@ export const NAV = [
   { href: "/scheduled", label: "Scheduled", code: "03" },
   { href: "/published", label: "Published", code: "04" },
   { href: "/insights", label: "Insights", code: "05" },
-  { href: "/settings/linkedin", label: "LinkedIn", code: "06" },
+  { href: "/blog", label: "Blog", code: "06" },
+  { href: "/settings/linkedin", label: "LinkedIn", code: "07" },
 ] as const;
 
 export function isActive(pathname: string, href: string): boolean {

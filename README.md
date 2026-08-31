@@ -27,6 +27,8 @@ no useful error, so new Facebook posts no longer use it — see
 - **Published** — recent FB posts with engagement + IG media grid
 - **Insights** — follower counts, daily reach/engagement charts (7/28
   days), and top posts per platform (`read_insights` permission)
+- **Blog** — author, edit, and schedule posts for the sister blog app
+  (`../blog-app`) at `/blog`; see "How blog scheduling works" below
 - **Client portal** — read-only view at `/client`: clients log in with
   the SAME PIN as the reports app (shared `companies` collection) and
   get a sidebar with Posts, Calendar, and Insights for their page only.
@@ -186,6 +188,38 @@ Reel specs: MP4/MOV, 3s–15min, 9:16 recommended.
    ```bash
    node scripts/setup-ig-db.mjs
    ```
+
+## How blog scheduling works
+
+The sister blog app (`../blog-app`) has no admin UI by design — its
+README says posts are "authored directly in the Appwrite console." This
+app's `/blog` is that missing authoring UI, writing straight into the
+`blog_posts` collection of the **same shared Appwrite database** blog-app
+reads from (same `APPWRITE_*` vars already used by the FB/IG queues above
+— nothing extra to configure, and no new setup script to run since
+blog-app's own `scripts/setup-blog.mjs` already provisions that
+collection).
+
+Unlike Facebook/Instagram/LinkedIn, there's no queue, publish worker, or
+cron route for the blog — none is needed. Blog-app's own read path
+(`lib/blog.ts`'s `getPublishedPosts`) already filters out any post whose
+`publishedAt` is in the future, so "scheduling" a post here is just
+writing `status: "published"` with a future `publishedAt`; the blog site
+flips it live on its own once that time passes, no action required on
+this side. Saving as a draft instead keeps `status: "draft"`, which never
+shows on the blog regardless of `publishedAt`.
+
+The one caveat, inherent to blog-app's ISR (`revalidate = 300`) and not
+something this app can fix: a newly-due post can take up to ~5 minutes to
+appear, or longer on a low-traffic day, since Next only regenerates the
+page on the next request after it goes stale — not proactively on a
+timer. If near-instant go-live time ever matters, blog-app would need an
+on-demand revalidation hook; out of scope here.
+
+Slugs are validated for uniqueness against blog-app's `slug_unique`
+index before every save. Reading time, when left blank, is estimated the
+same way blog-app does (word count ÷ 220 wpm) so it matches what
+blog-app would compute if the field were empty.
 
 ## How organic-stats sync works
 
@@ -371,8 +405,10 @@ app/
   api/cron/li/              Serverless-friendly LinkedIn queue publisher
   api/cron/organic-stats/   Nightly Meta -> Appwrite organic-stats sync
   actions.ts                Server actions (create, cancel, reschedule, publish)
+  blogActions.ts            Server actions for the blog composer (create/update/publish/delete)
+  blog/                     Blog list, new-post, and edit-post pages
   login/                    Shared-password login (same scheme as awaj-leads)
-components/                 Sidebar, MobileNav, Composer, RescheduleForm
+components/                 Sidebar, MobileNav, Composer, RescheduleForm, BlogComposer
 lib/
   facebook.ts         Graph API client + scheduling-window validation
   fbqueue.ts          Facebook scheduling queue (mirrors igqueue.ts)
@@ -385,6 +421,7 @@ lib/
   linkedinOrgs.ts     Connected-organization store (Appwrite) + token refresh
   liqueue.ts          LinkedIn scheduling queue (mirrors igqueue.ts)
   storage.ts          Appwrite Storage: shared media bucket + LI staging bucket
+  blog.ts             Blog post CRUD against blog-app's shared `blog_posts` collection
   auth.ts             Edge-safe cookie auth
   env.ts              Env accessors
 middleware.ts         Route protection

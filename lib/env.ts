@@ -42,6 +42,13 @@ export const env = {
   linkedinApiVersion: () => process.env.LINKEDIN_API_VERSION ?? "202506",
   /** Appwrite bucket id for staging LinkedIn media until publish time. */
   liMediaBucketId: () => process.env.LI_MEDIA_BUCKET_ID ?? "",
+
+  /**
+   * Public URL of the sister blog app (e.g. https://blog.awajet.com), used
+   * only to link out to a live post from the /blog list here. Optional —
+   * the blog feature works without it, just without the "View live" link.
+   */
+  blogSiteUrl: () => (process.env.BLOG_SITE_URL ?? "").replace(/\/$/, ""),
 };
 
 /** True when the Appwrite queue (IG scheduling) is configured. */
@@ -61,6 +68,21 @@ export function igQueueConfigured(): boolean {
  * bucket var needed: staged media shares storage.ts's MEDIA_BUCKET.
  */
 export function fbQueueConfigured(): boolean {
+  return Boolean(
+    env.appwriteEndpoint() &&
+      env.appwriteProjectId() &&
+      env.appwriteApiKey() &&
+      env.appwriteDatabaseId()
+  );
+}
+
+/**
+ * True when the blog-post scheduling feature can be used. Blog posts live
+ * in the `blog_posts` collection of the same shared Appwrite database the
+ * sister blog-app reads from (see lib/blog.ts) — no separate credentials
+ * needed beyond what the IG/FB queues already require.
+ */
+export function blogConfigured(): boolean {
   return Boolean(
     env.appwriteEndpoint() &&
       env.appwriteProjectId() &&
